@@ -32,9 +32,9 @@ is where the two load-bearing decisions are argued.
 
 It does three things:
 
-1. **Lexes the regular part of the notation** with five `match.token`
-   regexes (`#SAN`, `#MVN`, `#NAG`, `#RES`, `#TGN`) and three hand-written
-   `lex.match` matchers (`pgnComment`, `pgnRemark`, `pgnEscape`).
+1. **Lexes the regular part of the notation** with five gated match-token
+   matchers (`#SAN`, `#MVN`, `#NAG`, `#RES`, `#TGN`) and three ungated
+   hand-written ones (`pgnComment`, `pgnRemark`, `pgnEscape`).
 2. **Parses the recursive part** — games, tag pairs, variations — with nine
    rules in [`chess-grammar.jsonic`](chess-grammar.jsonic).
 3. **Builds a plain game model** (`Game[]`) in the `ref` actions, rather
@@ -59,11 +59,13 @@ an inferred field would make the parser a chess engine, and a bad one.
 | Path | What it is |
 |---|---|
 | [`chess-grammar.jsonic`](chess-grammar.jsonic) | **Single source of truth** for the rule table, authored in jsonic so it can carry comments. |
-| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in `ts/src/chess.ts` between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only. |
-| [`ts/src/chess.ts`](ts/src/chess.ts) | The plugin: types, lex matchers, options, `ref` actions, and the convenience entry points. |
-| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures, auto-discovered by the runner. The preferred home for any case expressible as `input -> JSON`. See [`test/AGENTS.md`](test/AGENTS.md). |
+| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **both** `ts/src/chess.ts` and `go/chess.go`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; neither runtime parses jsonic at run time. |
+| [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/chess` package. Plugin in `src/chess.ts`. Peer-depends on `@tabnas/parser`. |
+| [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
+| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **Both** runtimes auto-discover and run every file here, so adding one covers TypeScript and Go together. See [`test/AGENTS.md`](test/AGENTS.md). |
 | [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
-| [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
+| [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
+| [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by both runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
 
 ## Repo-specific gotchas
 
@@ -95,14 +97,19 @@ an inferred field would make the parser a chess engine, and a bad one.
   values must not be able to disagree. `strict` builds a narrower regex from
   the same template for the same reason.
 
-- **The `SYMBOL_TAIL` lookahead is load-bearing.** Without
-  `(?![A-Za-z0-9_+#=:-])` the SAN regex matches the `e2` prefix of `e2e4`
-  and the parse silently yields two moves. Section 7 says a symbol token
-  ends before the first non-symbol character; that lookahead is that rule.
+- **The symbol-tail guard is load-bearing.** Without it the SAN pattern
+  matches the `e2` prefix of `e2e4` and the parse silently yields two
+  moves — the worst possible outcome, worse than an error. Section 7 says
+  a symbol token ends before the first non-symbol character; the guard is
+  that rule. TS spells it as the `SYMBOL_TAIL` lookahead inside the
+  pattern; Go, which has no lookahead, spells it as the `endsToken` check
+  the matcher runs after the match.
 
-- **`#RES` must be registered before `#MVN`.** Token matchers run in `tin$`
-  order, which is registration order, and `1-0` starts with a digit. There
-  is a `(?![-/])` guard in `MOVE_NUMBER` as well — keep both.
+- **`#RES` must be tried before `#MVN`.** Match-token matchers run in
+  token-id order, which is registration order, and `1-0` starts with a
+  digit. TS relies on the `match.token` key order plus a `(?![-/])` guard
+  in `MOVE_NUMBER`; Go on the `j.Token` call order plus `TokenOrder`. Keep
+  every one of them.
 
 - **Rules without a node inherit the enclosing one.** `movetext`, `element`,
   `tag` and `tagbody` have no node of their own, so `r.node` in their
@@ -121,30 +128,38 @@ an inferred field would make the parser a chess engine, and a bad one.
 
 ## Authority and alignment rules
 
-1. **The grammar source is single-sourced, not duplicated.**
+1. **TypeScript is canonical.** When TS and Go disagree on parse
+   behaviour, TS wins; change Go to match.
+2. **The grammar source is single-sourced, not duplicated.**
    `chess-grammar.jsonic` is authored once; `embed-grammar.js` compiles it
-   into the `grammarText` literal in `src/chess.ts`. **Never hand-edit the
-   text between the `--- BEGIN/END EMBEDDED chess-grammar.jsonic ---`
-   markers** — edit the `.jsonic` and re-run `npm run embed` (or `npm run
-   build`, which embeds first).
-2. **The grammar carries no functions.** Actions are `@ref` strings the
+   into the `grammarText` literal in **both** `ts/src/chess.ts` and
+   `go/chess.go`. **Never hand-edit the text between the
+   `--- BEGIN/END EMBEDDED chess-grammar.jsonic ---` markers** — edit the
+   `.jsonic` and re-run `npm run embed` (or `npm run build`, which embeds
+   first). Build the TS side before the Go side after a grammar change, or
+   Go compiles against a stale copy. The Go embed rejects a grammar
+   containing backticks (incompatible with Go raw strings).
+3. **The grammar carries no functions.** Actions are `@ref` strings the
    plugin binds at load time; `embed-grammar.js` fails the build if an
    `a`/`c`/`h`/`e` field is anything but a string. That is what keeps the
    grammar shippable as data.
-3. **Prefer a `test/spec/*.tsv` fixture** over an in-language assertion
+4. **The two ports must produce the same values for the same input.** The
+   parity contract is the shared grammar source plus the shared
+   `test/spec/*.tsv` fixtures, which both runtimes auto-discover.
+5. **Prefer a `test/spec/*.tsv` fixture** over an in-language assertion
    whenever a case is expressible as `input -> JSON`. The in-language suite
    keeps only what a fixture cannot express.
-4. **Every claim about the notation cites a PGN section.** If you cannot
+6. **Every claim about the notation cites a PGN section.** If you cannot
    name the section, the behaviour is a guess, and a guess does not belong
    in a conformance parser. Where the standard is silent (the `[%…]` comment
    markup), say so explicitly in the docs.
-5. `VERSION` in `ts/src/chess.ts` MUST equal `ts/package.json` "version" —
-   `ts/test/version.test.ts` reads that file and fails (never skips) on
-   drift.
+7. Both `VERSION` constants (`ts/src/chess.ts`, `go/chess.go`) MUST equal
+   `ts/package.json` "version" — `ts/test/version.test.ts` and
+   `go/version_test.go` read that file and fail (never skip) on drift.
 
 ## Build & test
 
-From `ts/`:
+TypeScript (from `ts/`):
 
 ```bash
 npm install            # installs the @tabnas/parser peer
@@ -153,7 +168,37 @@ npm test               # node --enable-source-maps --test "dist-test/*.test.js"
 make diagram           # regenerate doc/grammar.{svg,txt} from the live grammar
 ```
 
-The repo-root [`Makefile`](Makefile) wraps the same targets.
+Go (from `go/`):
+
+```bash
+go build ./...
+go test ./...          # the shared fixtures, plus a Go-side suite
+```
+
+The repo-root [`Makefile`](Makefile) wraps both halves: `make build|test|
+clean` run the TS and Go sides, `make reset` rebuilds from clean,
+`make tags-go` lists `go/v*` tags, and `make publish-go V=x.y.z` injects V
+into the `const VERSION` in `go/chess.go`, commits and tags `go/vX.Y.Z`.
+
+## Go-specific notes
+
+The model and the accepted notation are identical — that is what the
+shared fixtures pin. Four things differ because the languages do, and each
+is a trap if you forget it:
+
+- **The database node is a `*Database`.** A Go slice is a value, so
+  `@gameitem-bc` appending to its inherited node would append to a copy.
+  `@pgn-bo` allocates a pointer for exactly this reason.
+- **`Game` embeds `Line` anonymously**, which is what makes the two
+  marshal to the same JSON object as the TypeScript `extends`.
+- **Boundary guards are code, not lookahead.** RE2 has no `(?!…)`, so the
+  PGN section 7 symbol-tail rule is the `endsToken` check the matcher runs
+  after the match, and `#SAN` / `#MVN` / `#RES` / `#NAG` are function-form
+  matchers (`Match.TokenFn`) rather than plain regexps because of it.
+- **Match-token matchers run in Tin-ascending order**, and tins are minted
+  in call order — so `j.Token("#RES")` MUST be called before
+  `j.Token("#MVN")`, or the `1` of `1-0` lexes as a move number. The
+  `TokenOrder` option says the same thing for the regexp-form entries.
 
 ## Not implemented
 
@@ -166,6 +211,3 @@ Deliberate omissions, each argued in
   raw string.
 - **Non-standard tokens**: the `--` / `Z0` null move and the `(=)` draw
   offer some tools emit. Accepting them would mean a `Move` with no piece.
-- **A Go port.** The template's dual-runtime layout is not used here; the
-  shared `test/spec/*.tsv` fixtures are still in the cross-runtime format,
-  so a port has a conformance suite waiting for it.

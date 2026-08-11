@@ -299,3 +299,31 @@ grammar, and a file that omits them still parses correctly.
   concatenation from a template. That is less pretty than a rule table and
   much easier to check against section 8.2.3 line by line, which is the
   property that matters for a spec-conformance job.
+
+---
+
+## 4. Two runtimes, one grammar
+
+The TypeScript and Go packages are not two parsers that happen to agree.
+The grammar is authored once, in
+[`chess-grammar.jsonic`](../../chess-grammar.jsonic), and compiled into
+both sources as JSON at build time — so neither runtime can quietly grow a
+rule the other lacks. The conformance fixtures in
+[`test/spec/`](../../test/spec/) are shared the same way: both runners list
+that directory and run every `.tsv` in it, comparing after a JSON
+round-trip so the assertion is about the shape a *consumer* receives, not
+about either language's internals.
+
+What is necessarily per-runtime is the lexer, because a lexer is code:
+
+- Go's RE2 has no lookahead, so the section 7 symbol-tail rule that stops
+  `e2e4` becoming two moves is a bounds check after the match rather than a
+  `(?!…)` inside the pattern. Same rule, checked one step later.
+- A Go slice is a value, so the rule that appends each game writes through
+  a `*Database`, where JavaScript pushes onto an array.
+- `Game` embeds `Line` anonymously rather than extending it, which is what
+  makes the two marshal to the same JSON object.
+
+None of those is visible in the output — which is the point, and what the
+shared fixtures exist to keep true. TypeScript is canonical: where the two
+disagree, TS is right and Go is the bug.

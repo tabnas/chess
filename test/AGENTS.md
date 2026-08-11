@@ -1,9 +1,9 @@
 # Agents Guide — shared spec fixtures
 
-`spec/*.tsv` holds the conformance fixtures. The runner discovers every file
-in this directory by listing it, so adding a `.tsv` runs it without touching
-any code — in this runtime, and in any future runtime that reads the same
-directory.
+`spec/*.tsv` holds the cross-runtime conformance fixtures. **Both** runtimes
+discover every file in this directory by listing it, so a change here affects
+TypeScript and Go together — edit with that in mind, and adding a `.tsv` runs
+it in both without touching either runner.
 
 ## Format
 
@@ -63,5 +63,17 @@ the default makes it a whole database.
   wrong on the first draft (a bare integer *is* a legal move number
   indication, 8.2.2.1) and were corrected against the spec, not against the
   output.
-- **A new fixture must pass before it is committed.** Run `npm test` from
-  `ts/`.
+- **A new fixture must pass in BOTH runtimes.** Run `npm test` from `ts/`
+  and `go test ./...` from `go/` before considering it done.
+- **TypeScript is canonical.** If the two runtimes disagree, the TS
+  behaviour is the expected value — unless Go has exposed a genuine TS
+  defect, in which case fix TS first and pin the corrected behaviour here.
+
+## Who runs what
+
+- TypeScript: `ts/test/parity.test.ts` — reads `../../test/spec` at runtime
+  from `dist-test/`, one `describe` per file.
+- Go: `go/parity_test.go` — `TestSpec` lists `../test/spec/*.tsv`.
+
+Both compare after a JSON round-trip, so the fixture asserts the shape a
+consumer receives rather than either language's internal representation.

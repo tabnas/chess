@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
-// Embed chess-grammar.jsonic into the TypeScript source.
+// Embed chess-grammar.jsonic into the TypeScript AND Go sources.
 // Run via: npm run embed  (or:  node embed-grammar.js)
 //
 // The grammar is AUTHORED in jsonic (so it can carry comments) and
-// EMBEDDED as JSON, so the shipped plugin parses it with JSON.parse and
-// needs no jsonic at runtime. @tabnas/jsonic is a build-time dependency
-// only.
+// EMBEDDED as JSON, so each runtime parses it with its own standard
+// library and needs no jsonic at run time. @tabnas/jsonic is a
+// build-time dependency only.
+//
+// This is what keeps the two runtimes honest: they do not each have a
+// grammar, they have THE grammar.
 //
 // Never hand-edit between the BEGIN/END markers: edit
 // chess-grammar.jsonic and re-run this script.
@@ -19,6 +22,7 @@ const { jsonic } = require('@tabnas/jsonic')
 
 const GRAMMAR_FILE = path.join(__dirname, '..', 'chess-grammar.jsonic')
 const TS_FILE = path.join(__dirname, 'src', 'chess.ts')
+const GO_FILE = path.join(__dirname, '..', 'go', 'chess.go')
 
 const BEGIN = '// --- BEGIN EMBEDDED chess-grammar.jsonic ---'
 const END = '// --- END EMBEDDED chess-grammar.jsonic ---'
@@ -70,4 +74,33 @@ function embedTS() {
   console.log('Embedded grammar into', TS_FILE)
 }
 
+function embedGo() {
+  let src = fs.readFileSync(GO_FILE, 'utf8')
+  const startIdx = src.indexOf(BEGIN)
+  const endIdx = src.indexOf(END)
+  if (-1 === startIdx || -1 === endIdx) {
+    console.error('Go markers not found in', GO_FILE)
+    process.exit(1)
+  }
+
+  // A Go raw string literal cannot contain a backtick and has no escapes,
+  // so the JSON goes in verbatim — but only if it holds no backtick.
+  if (json.includes('`')) {
+    console.error('Grammar contains a backtick, incompatible with Go raw strings')
+    process.exit(1)
+  }
+
+  // The blank line before END keeps the result gofmt-clean.
+  const replacement = BEGIN + '\nconst grammarText = `\n' + json + '`\n\n' + END
+
+  src = src.substring(0, startIdx) + replacement + src.substring(endIdx + END.length)
+  fs.writeFileSync(GO_FILE, src)
+  console.log('Embedded grammar into', GO_FILE)
+}
+
 embedTS()
+if (fs.existsSync(GO_FILE)) {
+  embedGo()
+} else {
+  console.log('No Go source at', GO_FILE, '- skipping')
+}

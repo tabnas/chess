@@ -1,14 +1,18 @@
 # Tabnas Plugin Template Guide
 
-`@tabnas/zon` doubles as the **template** you copy to start a new Tabnas
-grammar plugin (e.g. `@tabnas/proto` was bootstrapped from it). This file
-is for an agent *starting a fresh plugin*: it separates the reusable
-scaffolding from the ZON-specific parts, documents the engine model every
-plugin author needs, maps the ecosystem so you pick the right base, and
-lists the dev-environment realities that aren't obvious from a clone.
+This repository was bootstrapped from the `@tabnas/zon` **template**, the
+scaffold Tabnas grammar plugins are copied from. This file is for an agent
+*starting a fresh plugin*: it separates the reusable scaffolding from the
+format-specific parts, documents the engine model every plugin author
+needs, maps the ecosystem so you pick the right base, and lists the
+dev-environment realities that aren't obvious from a clone.
 
-For the ZON plugin's own internals (the jsonic layering, lex matchers,
-parity rules), see [`AGENTS.md`](AGENTS.md).
+Its worked example is ZON, because that is the template's own format.
+`@tabnas/chess` is what the *other* branch of §3's decision rule looks
+like: a non-JSON-shaped format, built on the bare engine, with a tokenising
+lexer rather than a scannerless grammar. For this plugin's own internals
+see [`AGENTS.md`](AGENTS.md), and for the reasoning behind them
+[`ts/doc/concepts.md`](ts/doc/concepts.md).
 
 > Every engine-behaviour claim below was read off the published
 > `@tabnas/parser` source (`dist/defaults.js`, `dist/lexer.js`,

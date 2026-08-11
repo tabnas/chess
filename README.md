@@ -3,13 +3,15 @@
 <!-- tabnas-badges -->
 [![npm](https://tabnas.github.io/status/badges/chess-npm.svg)](https://www.npmjs.com/package/@tabnas/chess)
 [![CI](https://github.com/tabnas/chess/actions/workflows/ci.yml/badge.svg)](https://github.com/tabnas/chess/actions/workflows/ci.yml)
+[![go](https://tabnas.github.io/status/badges/chess-go.svg)](https://pkg.go.dev/github.com/tabnas/chess/go)
 [![tabnas standard](https://tabnas.github.io/status/badges/chess-standard.svg)](https://tabnas.github.io/status/)
 <!-- /tabnas-badges -->
 
 A grammar plugin that teaches the [Tabnas](https://github.com/tabnas/parser)
 parser to read **chess notation**: [PGN](https://www.chessprogramming.org/Portable_Game_Notation)
 games and the [SAN](https://en.wikipedia.org/wiki/Algebraic_notation_(chess))
-moves inside them.
+moves inside them. Available for both TypeScript and Go, built on the same
+grammar.
 
 Chess notation looks like this:
 
@@ -25,10 +27,16 @@ Chess notation looks like this:
 ## Install
 
 ```bash
+# TypeScript / JavaScript
 npm install @tabnas/parser @tabnas/chess
+
+# Go
+go get github.com/tabnas/chess/go@latest
 ```
 
 ## One tiny example
+
+**TypeScript** — the plugin layers onto a Tabnas engine:
 
 ```js
 const { Tabnas } = require('@tabnas/parser')
@@ -56,6 +64,15 @@ capture.piece          // => 'P'
 capture.capture        // => true
 capture.to             // => 'd5'
 capture.disambiguation // => ({ file: 'e' })
+```
+
+**Go** — `chess.Parse` is the one-call entry point:
+
+```go
+import chess "github.com/tabnas/chess/go"
+
+db, _ := chess.Parse("1. e4 e5 *")
+// db[0].Moves[0] == &chess.Move{San: "e4", Piece: "P", To: "e4", Number: 1, Side: "w"}
 ```
 
 ## What you get back
@@ -142,15 +159,19 @@ one file per quadrant:
 | **Reference** (API + options + syntax) | [ts/doc/reference.md](ts/doc/reference.md) |
 | **Concepts** (explanation) | [ts/doc/concepts.md](ts/doc/concepts.md) |
 
-Package hub: [`ts/README.md`](ts/README.md).
+The docs' examples are TypeScript, but the model, the options and the
+accepted notation are the same in both runtimes.
+
+Package hubs: [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md).
 
 ## Grammar diagram
 
 The grammar is defined once in the top-level
-[`chess-grammar.jsonic`](chess-grammar.jsonic) and embedded into
-[`ts/src/chess.ts`](ts/src/chess.ts) by
-[`ts/embed-grammar.js`](ts/embed-grammar.js) during the build. Edit the
-grammar there, not in the generated source.
+[`chess-grammar.jsonic`](chess-grammar.jsonic) and embedded into **both**
+implementations — TypeScript ([`ts/src/chess.ts`](ts/src/chess.ts)) and Go
+([`go/chess.go`](go/chess.go)) — by
+[`ts/embed-grammar.js`](ts/embed-grammar.js) during the TypeScript build.
+Edit the grammar there, not in the generated sources.
 
 As a railroad/syntax diagram, generated from the live grammar with
 [`@tabnas/railroad`](https://github.com/tabnas/railroad):
