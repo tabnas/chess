@@ -1,17 +1,21 @@
-/* Copyright (c) 2025 Richard Rodger and other contributors, MIT License */
+/* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 
-// Composition test: the ZON grammar plugin layered with the official
+// Composition test: the chess grammar plugin layered with the official
 // @tabnas/debug plugin. @tabnas/debug is a devDependency, but this still
 // resolves it dynamically and SKIPS when it is absent so the suite stays
 // runnable outside the package; TABNAS_DEBUG_PATH can point at a sibling
 // checkout's built plugin.
+//
+// It also pins the grammar's shape: the rule set, the entry rule, and the
+// push edges that make a variation recursive. Those are the claims
+// doc/concepts.md makes about the grammar, checked against the live model
+// rather than against the source file.
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 
 import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '../dist/zon'
+import { Chess } from '../dist/chess'
 
 function loadDebug(): any {
   const candidates = [process.env.TABNAS_DEBUG_PATH, '@tabnas/debug'].filter(
@@ -28,71 +32,74 @@ function loadDebug(): any {
 }
 
 const Debug = loadDebug()
-const skip = Debug
-  ? false
-  : '@tabnas/debug not available (set TABNAS_DEBUG_PATH)'
+const skip = Debug ? false : '@tabnas/debug not available (set TABNAS_DEBUG_PATH)'
 
 function build(): any {
-  const tn = new Tabnas().use(jsonic).use(Zon, {})
+  const tn = new Tabnas().use(Chess, {})
   tn.use(Debug, { print: false, trace: false })
   return tn
 }
 
-describe('compose: zon + @tabnas/debug', () => {
+// Every rule the debug model reports as pushed or replaced by `name`.
+function edges(model: any, name: string): string[] {
+  const rule = model.rules.find((r: any) => r.name === name)
+  assert.ok(rule, `no rule ${name} in the model`)
+  const out = new Set<string>()
+  for (const phase of ['open', 'close']) {
+    for (const alt of rule[phase] || []) {
+      if (alt.push) out.add(alt.push)
+      if (alt.replace) out.add(alt.replace)
+    }
+  }
+  return [...out].sort()
+}
+
+describe('compose: chess + @tabnas/debug', () => {
   test('parses normally with the debug plugin installed', { skip }, () => {
     const tn = build()
-    assert.deepStrictEqual(
-      JSON.parse(JSON.stringify(tn.parse('.{ .a = 1, .b = .{ 2, 3 } }'))),
-      { a: 1, b: [2, 3] },
-    )
+    const game = JSON.parse(JSON.stringify(tn.parse('1. e4 e5 (1... c5) 1-0')))[0]
+    assert.equal(game.result, '1-0')
+    assert.equal(game.moves.length, 2)
+    assert.equal(game.moves[1].variations[0].moves[0].san, 'c5')
   })
 
-  test('debug.model() returns the structured zon grammar', { skip }, () => {
+  test('debug.model() returns the structured chess grammar', { skip }, () => {
     const tn = build()
     const m = tn.debug.model()
 
-    // The structured rule set and entry rule.
     assert.deepStrictEqual(
       m.rules.map((r: any) => r.name).sort(),
-      ['elem', 'list', 'map', 'pair', 'val'],
+      ['element', 'game', 'gameitem', 'move', 'movetext', 'pgn', 'rav', 'tag', 'tagbody'],
     )
-    assert.equal(m.config.start, 'val')
-    assert.ok(
-      m.plugins.some((p: any) => p.name === 'Zon'),
-      'plugins should list Zon',
-    )
+    // Note `config.start`, not `m.start`.
+    assert.equal(m.config.start, 'pgn')
+    assert.ok(m.plugins.some((p: any) => 'Chess' === (p.name ?? p)))
+  })
 
-    // val is a choice whose open alts push both the map and list rules:
-    // ZON's `.{ ... }` syntax is disambiguated into struct (map) vs tuple
-    // (list) by what follows the opening brace.
-    const val = m.rules.find((r: any) => r.name === 'val')
-    assert.ok(
-      val.open.some((a: any) => a.push === 'map'),
-      'val should push map',
-    )
-    assert.ok(
-      val.open.some((a: any) => a.push === 'list'),
-      'val should push list',
-    )
+  test('the push edges make a game, and a variation recursive', { skip }, () => {
+    const m = build().debug.model()
 
-    // The rule-reference graph captures the recursive collection structure:
-    // map -> pair, list -> elem, and pair/elem each close-replace themselves
-    // to iterate over additional members.
-    const edge = (name: string) => m.graph.find((e: any) => e.name === name)
-    assert.deepStrictEqual(edge('val').openPush.slice().sort(), ['list', 'map'])
-    assert.deepStrictEqual(edge('map').openPush, ['pair'])
-    assert.deepStrictEqual(edge('list').openPush, ['elem'])
-    assert.deepStrictEqual(edge('pair').closeReplace, ['pair'])
-    assert.deepStrictEqual(edge('elem').closeReplace, ['elem'])
+    // A database is a sequence of games; `gameitem` iterates by replacing
+    // itself, so `pgn`'s node stays put across repetitions.
+    assert.deepStrictEqual(edges(m, 'pgn'), ['gameitem'])
+    assert.deepStrictEqual(edges(m, 'gameitem'), ['game', 'gameitem'])
 
-    // The grammar portion is JSON-serialisable and round-trips.
-    const grammar = {
-      tokens: m.tokens,
-      rules: m.rules,
-      graph: m.graph,
-      config: m.config,
-      abnf: m.abnf,
-    }
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(grammar)).rules, m.rules)
+    // A game is a tag section then a movetext section.
+    assert.deepStrictEqual(edges(m, 'game'), ['movetext', 'tag'])
+    assert.deepStrictEqual(edges(m, 'tag'), ['tagbody'])
+
+    // An element sequence iterates, and one of its elements is a variation
+    // that re-enters movetext — the recursion of PGN spec 8.2.5.
+    assert.deepStrictEqual(edges(m, 'movetext'), ['element'])
+    assert.deepStrictEqual(edges(m, 'element'), ['element', 'rav'])
+    assert.deepStrictEqual(edges(m, 'rav'), ['movetext'])
+
+    // The alternate entry point stands alone.
+    assert.deepStrictEqual(edges(m, 'move'), [])
+  })
+
+  test('the model is JSON-serialisable and round-trips', { skip }, () => {
+    const m = build().debug.model()
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(m)), m)
   })
 })

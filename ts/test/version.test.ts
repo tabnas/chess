@@ -7,9 +7,6 @@
 // and @tabnas/json exported Version = '1.0.0' for several releases because
 // nothing ever rewrote it. Both were invisible until someone read the file. A
 // release that bumps package.json and forgets the constant now fails here.
-//
-// `go/version_test.go` checks the Go `const VERSION` against the SAME
-// package.json, so the two runtimes cannot drift apart either.
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
@@ -18,7 +15,7 @@ import { join } from 'node:path'
 
 // At runtime this file is loaded from `dist-test/`, so `..` is the package
 // root: the version has to be reachable the way a consumer reaches it, not
-// just from `../dist/zon`.
+// just from `../dist/chess`.
 const api = require('..')
 
 // Read package.json rather than importing it, so an unreadable file throws

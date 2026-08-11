@@ -1,0 +1,154 @@
+# Chess Notation Grammar Definition
+#
+# Parses PGN (Portable Game Notation) and its embedded SAN (Standard
+# Algebraic Notation) moves, per the PGN standard, section 18:
+#
+#   <PGN-database>       ::= <PGN-game> <PGN-database> | <empty>
+#   <PGN-game>           ::= <tag-section> <movetext-section>
+#   <tag-section>        ::= <tag-pair> <tag-section> | <empty>
+#   <tag-pair>           ::= [ <tag-name> <tag-value> ]
+#   <movetext-section>   ::= <element-sequence> <game-termination>
+#   <element-sequence>   ::= <element> <element-sequence>
+#                          | <recursive-variation> <element-sequence>
+#                          | <empty>
+#   <element>            ::= <move-number-indication> | <SAN-move>
+#                          | <numeric-annotation-glyph>
+#   <recursive-variation> ::= ( <element-sequence> )
+#
+# Example:
+#   [Event "F/S Return Match"]
+#   [Result "1/2-1/2"]
+#
+#   1. e4 e5 2. Nf3 {a note} Nc6 $1 (2... d6 3. d4) 1/2-1/2
+#
+# LEXICAL MODEL
+#
+# Chess notation is a *tokenised* language, not a scannerless one: a SAN
+# move is a single self-delimiting token (PGN spec section 7 classes it as a
+# "symbol token"). It must be lexed whole, because whitespace is the only
+# thing separating `Nb1 d2` (two moves) from `Nb1d2` (one disambiguated
+# move), and the parser never sees whitespace. So the regular part of the
+# notation lives in lex matchers and only the recursive part — games, tag
+# pairs, variations — lives here:
+#
+#   #SAN   a SAN move, with its optional suffix annotation  (e4, Qa6xb7#, O-O!?)
+#   #MVN   a move number indication                         (12. or 12...)
+#   #NAG   a numeric annotation glyph                       ($14)
+#   #RES   a game termination marker                        (1-0 0-1 1/2-1/2 *)
+#   #CMT   a brace comment                                  ({ ... })
+#   #RMK   a rest-of-line comment                           (; ...)
+#   #TGN   a tag name                                       (Event)
+#   #ST    a tag value (the engine's string matcher, restricted to ")
+#   #OS #CS  [ and ]         #OP #CP  ( and )
+#
+# Custom match-token matchers are gated by the token columns the active
+# alternates declare, so each token can only lex where this grammar admits
+# it: a bare `Event` is a tag name inside `[...]` and a lex error anywhere
+# else. That is why every alternate below names the tokens it expects,
+# including the ones it only wants to hand back to its parent (`b: 1`).
+#
+# NODE MODEL
+#
+# A "line" is a game or a variation: an object with `moves`, and optionally
+# the `comments`/`nags` that precede its first move. `game` and `rav` each
+# allocate one; `movetext` and `element` have no node of their own, so they
+# inherit the enclosing line and append to it directly. That is what makes a
+# variation and a game the same shape.
+#
+# The grammar is applied with { rule: { alt: { g: 'chess' } } } so every
+# alt below is automatically tagged with the 'chess' group.
+
+{
+  # A PGN database: zero or more games.
+  rule: pgn: open: [
+    { s: '#ZZ' g: 'pgn,empty' }
+    { s: '#HEAD' p: gameitem b: 1 g: 'pgn,game' }
+  ]
+  rule: pgn: close: [
+    { s: '#ZZ' g: 'pgn,end' }
+  ]
+
+  # One game of the database, then loop for the next. Iterating in a
+  # separate rule keeps `pgn`'s node (the game array) stable across
+  # repetitions, exactly as @tabnas/json's elem does for a list.
+  rule: gameitem: open: [
+    { s: '#HEAD' p: game b: 1 g: 'game,item' }
+  ]
+  rule: gameitem: close: [
+    { s: '#HEAD' r: gameitem b: 1 g: 'game,next' }
+    { s: '#ZZ' g: 'game,end' }
+  ]
+
+  # tag-section followed by movetext-section. Both are optional, and a
+  # new tag pair after the movetext starts the next game (import-format
+  # PGN does not always write the termination marker).
+  rule: game: open: [
+    { s: '#OS' p: tag b: 1 g: 'game,tag' }
+    { s: '#ELEM' p: movetext b: 1 g: 'game,movetext' }
+    { s: '#RES' a: '@result-open' g: 'game,result' }
+  ]
+  rule: game: close: [
+    { s: '#OS' p: tag b: 1 c: '@more-tags' g: 'game,tag' }
+    { s: '#ELEM' p: movetext b: 1 g: 'game,movetext' }
+    { s: '#RES' a: '@result-close' g: 'game,result' }
+    { s: '#ZZ' g: 'game,end' }
+    { b: 1 g: 'game,more' }
+  ]
+
+  # [ Name "Value" ]. Split in two because an alternate keeps only its
+  # first two matched tokens (o0, o1), and the `[` is one of three.
+  rule: tag: open: [
+    { s: '#OS' p: tagbody g: 'tag,open' }
+  ]
+  rule: tag: close: [
+    { s: '#CS' g: 'tag,close' }
+  ]
+  rule: tagbody: open: [
+    { s: '#TGN #ST' a: '@tag' g: 'tag,pair' }
+  ]
+  rule: tagbody: close: [
+    { s: '#CS' b: 1 g: 'tag,end' }
+  ]
+
+  # An element sequence. No node of its own: it writes into the line.
+  rule: movetext: open: [
+    { s: '#ELEM' p: element b: 1 g: 'movetext,elem' }
+  ]
+  rule: movetext: close: [
+    { s: '#EEND' b: 1 g: 'movetext,end' }
+    { s: '#ZZ' g: 'movetext,end' }
+    { b: 1 g: 'movetext,more' }
+  ]
+
+  rule: element: open: [
+    { s: '#SAN' a: '@move' g: 'elem,move' }
+    { s: '#MVN' a: '@number' g: 'elem,number' }
+    { s: '#NAG' a: '@nag' g: 'elem,nag' }
+    { s: '#CMT' a: '@brace-comment' g: 'elem,comment' }
+    { s: '#RMK' a: '@line-comment' g: 'elem,comment' }
+    { s: '#OP' p: rav b: 1 u: { rav: true } g: 'elem,rav' }
+  ]
+  rule: element: close: [
+    { s: '#ELEM' r: element b: 1 g: 'elem,next' }
+    { s: '#EEND' b: 1 g: 'elem,end' }
+    { s: '#ZZ' g: 'elem,end' }
+    { b: 1 g: 'elem,more' }
+  ]
+
+  # A recursive annotation variation: ( element-sequence ).
+  rule: rav: open: [
+    { s: '#OP' p: movetext g: 'rav,open' }
+  ]
+  rule: rav: close: [
+    { s: '#CP' g: 'rav,close' }
+  ]
+
+  # Alternate entry point (`start: 'move'`): a single SAN move on its own.
+  rule: move: open: [
+    { s: '#SAN' a: '@bare-move' g: 'move,san' }
+  ]
+  rule: move: close: [
+    { s: '#ZZ' g: 'move,end' }
+    { b: 1 g: 'move,more' }
+  ]
+}

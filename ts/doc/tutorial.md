@@ -1,130 +1,189 @@
-# Tutorial — your first ZON parse
+# Tutorial
 
-This walks you from nothing to a working parse, then through one
-option and one error. Follow it in order; each step builds on the
-last. When you finish you will have installed the plugin, parsed a
-struct and a tuple, switched on an option, and handled a parse error.
-
-For a recipe-style index of individual tasks, see the
-[how-to guide](guide.md). For exhaustive signatures and the full
-syntax, see the [reference](reference.md). For how it all works, see
-[concepts](concepts.md).
+Zero to a working chess-notation parser, step by step. By the end you will
+have read a game out of a PGN file, walked its moves, and followed a
+variation. For task-sized recipes see [guide.md](guide.md); for the exact
+API see [reference.md](reference.md).
 
 ## 1. Install
 
-`@tabnas/zon` is a grammar plugin: it has no parser of its own. It runs
-on the Tabnas engine, with the relaxed-JSON grammar from
-`@tabnas/jsonic` underneath. Install all three:
+`@tabnas/chess` is a grammar plugin, so it needs the engine alongside it:
 
 ```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
+npm install @tabnas/parser @tabnas/chess
 ```
 
-`@tabnas/parser` (>= 2) and `@tabnas/jsonic` (>= 2) are peer
-dependencies.
+## 2. Parse your first move
 
-## 2. Build a parser
-
-Create a Tabnas engine, layer the jsonic grammar onto it, then layer
-the ZON plugin on top. The result is a reusable parser instance:
+The quickest thing you can do is read a single move:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseSan } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const move = parseSan('Nf3')
 
-j.parse('.{ .name = "Alice", .age = 30 }') // => { name: 'Alice', age: 30 }
+move.piece // => 'N'
+move.to    // => 'f3'
 ```
 
-You wrote Zig anonymous-struct syntax — `.{ ... }` to open, `.field`
-for each key, `=` to assign — and got back a plain object. That is the
-point: the plugin teaches the engine to read ZON.
-
-## 3. Parse a tuple
-
-The same `.{ ... }` opener also makes tuples. When the brace is *not*
-immediately followed by `.field =`, the values inside become an array:
+`piece` is the letter the PGN standard uses for a knight, and `to` is the
+destination square. Notice what is *not* there: no `from`. A pawn move fills
+in the piece letter the notation leaves out:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseSan } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon)
-
-j.parse('.{ 1, 2, 3 }')      // => [1, 2, 3]
-j.parse('.{ "a", "b" }')     // => ['a', 'b']
+parseSan('e4').piece // => 'P'
+parseSan('e4').to    // => 'e4'
 ```
 
-The plugin decides struct-vs-tuple by peeking past the opening brace,
-so you never have to mark which one you mean — just write it.
+## 3. Parse a game
 
-## 4. Nest and mix
-
-Structs and tuples nest freely, and a struct can hold both:
+Real notation comes in games. `parseGame` reads one:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseGame } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const game = parseGame('1. e4 e5 2. Nf3 Nc6 1/2-1/2')
 
-j.parse('.{ .xs = .{ 1, 2, 3 }, .y = .{ .z = true } }') // => { xs: [1, 2, 3], y: { z: true } }
+game.moves.length  // => 4
+game.result        // => '1/2-1/2'
+game.moves[2].san  // => 'Nf3'
 ```
 
-This is the shape of a real `build.zig.zon` manifest: named fields,
-some holding nested structs, some holding tuple-style path lists.
-
-## 5. Turn on an option
-
-The plugin is configured through its second `use()` argument. For
-example, a Zig char literal like `'A'` is a one-character string by
-default; set `charAsNumber: true` to get its code point instead:
+Every move carries its place in the game, whether or not the notation
+bothered to write a number:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseGame } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon, { charAsNumber: true })
+const game = parseGame('e4 e5 Nf3 *')
 
-j.parse("'A'") // => 65
+game.moves[0].number // => 1
+game.moves[0].side   // => 'w'
+game.moves[1].side   // => 'b'
+game.moves[2].number // => 2
 ```
 
-There are only two options, `charAsNumber` and `enumTag`; the
-[reference](reference.md#options) lists both with their defaults.
+## 4. Read the tag pairs
 
-## 6. Catch an error
-
-ZON is not a superset of JSON. A bare `{` is not a valid opener — the
-plugin removes it on purpose — so parsing one throws:
+The bracketed header of a PGN file is the *tag pair section*. It arrives as
+a plain object of raw strings:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseGame } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const game = parseGame(`
+[Event "F/S Return Match"]
+[White "Fischer, Robert J."]
+[Result "1/2-1/2"]
 
-let threw = false
-try {
-  j.parse('{ a = 1 }') // not ZON: bare { is rejected
-} catch (e) {
-  threw = true
-}
-threw // => true
+1. e4 e5 1/2-1/2
+`)
+
+game.tags.Event  // => 'F/S Return Match'
+game.tags.White  // => 'Fischer, Robert J.'
+game.tags.Result // => '1/2-1/2'
 ```
 
-The thrown error is the engine's standard parse error, with a code,
-a source location, and a formatted message you can show a user.
+Tag values stay exactly as written. Turning `"1992.11.04"` into a date is a
+job for your code, not the parser's — see
+[concepts.md](concepts.md#raw-tag-values).
 
-## Where to go next
+## 5. Follow the annotations
 
-- [How-to guide](guide.md) — focused recipes for individual tasks.
-- [Reference](reference.md) — the public API, every option, the full
-  ZON syntax accepted.
-- [Concepts](concepts.md) — how the plugin reshapes the engine, and
-  why.
+Comments, glyphs and variations attach to the move they follow:
+
+```js
+const { parseGame } = require('@tabnas/chess')
+
+const game = parseGame('1. e4 {Best by test.} $1 e5 (1... c5 2. Nf3) *')
+
+game.moves[0].comments[0].text            // => 'Best by test.'
+game.moves[0].nags                        // => ([1])
+game.moves[1].variations[0].moves[0].san  // => 'c5'
+```
+
+A variation is the same shape as a game's own line of play, so the same code
+walks both. And because it *replaces* the move it follows, it starts on that
+move's number and side:
+
+```js
+const { parseGame } = require('@tabnas/chess')
+
+const game = parseGame('1. e4 e5 (1... c5 2. Nf3) *')
+const sicilian = game.moves[1].variations[0]
+
+sicilian.moves[0].number // => 1
+sicilian.moves[0].side   // => 'b'
+sicilian.moves[1].number // => 2
+sicilian.moves[1].side   // => 'w'
+```
+
+## 6. Read a whole file
+
+A PGN file may hold many games. The default entry point reads all of them:
+
+```js
+const { parse } = require('@tabnas/chess')
+
+const database = parse(`
+[White "A"]
+1. e4 1-0
+
+[White "B"]
+1. d4 0-1
+`)
+
+database.length            // => 2
+database[1].tags.White     // => 'B'
+database[1].result         // => '0-1'
+```
+
+In real life that source would come from a file:
+
+```js ignore
+const { readFileSync } = require('node:fs')
+const { parse } = require('@tabnas/chess')
+
+const database = parse(readFileSync('games.pgn', 'utf8'))
+console.log(`${database.length} games`)
+```
+
+## 7. Use the engine directly
+
+`parse` and `parseGame` are conveniences. Install the plugin on a Tabnas
+engine when you want to hold on to a configured parser, or compose it with
+other plugins:
+
+```js
+const { Tabnas } = require('@tabnas/parser')
+const { Chess } = require('@tabnas/chess')
+
+const tn = new Tabnas().use(Chess, { strict: true })
+
+tn.parse('1. e4 O-O *')[0].moves[1].castle // => 'king'
+```
+
+That `strict: true` asks for export-format notation only. Import format —
+the default — accepts what people actually type:
+
+```js
+const { Tabnas } = require('@tabnas/parser')
+const { Chess } = require('@tabnas/chess')
+
+const tn = new Tabnas().use(Chess)
+
+tn.parse('1. e4 0-0 *')[0].moves[1].castle // => 'king'
+```
+
+Under `strict: true` that same `0-0` is rejected, because the standard spells
+castling with the letter O.
+
+## Where next
+
+- [guide.md](guide.md) — recipes: streaming a large file, pulling clock
+  times out of comments, walking variations, writing notation back out.
+- [reference.md](reference.md) — every option, every type, every export.
+- [concepts.md](concepts.md) — why the model looks like this, and how the
+  grammar is put together.
