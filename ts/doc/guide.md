@@ -17,7 +17,9 @@ parseSan('e9')           // => undefined
 ```
 
 To get the same thing through the engine — with a parse *error* rather than
-`undefined`, and with the position reported — use the `move` start rule:
+`undefined`, and with the position reported — use the `move` start rule.
+(`parse` and `parseGame` do not take `start`: they parse a database, and
+their return types say so.)
 
 ```js
 const { Tabnas } = require('@tabnas/parser')

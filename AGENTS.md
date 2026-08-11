@@ -122,9 +122,21 @@ an inferred field would make the parser a chess engine, and a bad one.
   the parse result is plain JSON with no clean-up pass. `@rav-bo` seeds a
   fresh counter from the move the variation replaces.
 
-- **A `[` after the movetext starts the NEXT game.** That is the
-  `@more-tags` condition on one `game` close alternate, not a whitespace
-  rule — blank lines between games are layout (8.2.1), not grammar.
+- **A `[` after the movetext starts the NEXT game**, and so does anything
+  after a termination marker (8.2.6: the marker is the LAST element). Those
+  are the `@more-tags` and `@no-result` conditions on two `game` close
+  alternates, not whitespace rules — blank lines between games are layout
+  (8.2.1), not grammar.
+
+- **The asterisk is the one result that needs no boundary.** Section 7
+  makes `*` "a token by itself... self terminating", while `1-0`, `0-1` and
+  `1/2-1/2` are symbol tokens. That is why `RESULT` guards three of the
+  four and not the asterisk, and why `*1. e4 *` is two games.
+
+- **The tag map has a null prototype.** Section 8.1 admits any name of
+  letters, digits and underscore, `__proto__` among them, and on an
+  ordinary object that assignment sets the prototype instead of a property
+  — silently losing a legal tag.
 
 ## Authority and alignment rules
 

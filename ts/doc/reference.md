@@ -93,8 +93,13 @@ does not require otherwise.
 
 ### `parse(src, options?) => Game[]`
 
-Parse a PGN database. Equivalent to `new Tabnas().use(Chess, options).parse(src)`.
-Throws on malformed notation; returns `[]` for empty source.
+Parse a PGN database. Throws on malformed notation; returns `[]` for empty
+source.
+
+`options` is `DatabaseOptions` — `ChessOptions` without `start`. These two
+functions parse a database and their return types say so, so the start rule
+is fixed at `pgn` (in the types, and at run time for callers who have
+none). Install the plugin directly for another entry rule.
 
 ```js
 const { parse } = require('@tabnas/chess')
@@ -106,6 +111,7 @@ parse('').length                       // => 0
 ### `parseGame(src, options?) => Game | undefined`
 
 The first game of `parse(src, options)`, or `undefined` if there is none.
+Takes `DatabaseOptions`, as `parse` does.
 
 ```js
 const { parseGame } = require('@tabnas/chess')
@@ -236,6 +242,7 @@ name keeps the first value (8.1 says a name should not repeat).
 | `#MVN` | a move number indication: digits, then zero or more periods | 8.2.2 |
 | `#NAG` | `$` and digits | 8.2.4 |
 | `#RES` | `1-0`, `0-1`, `1/2-1/2` or `*` | 8.2.6 |
+
 | `#CMT` | `{ … }`, which may span lines and does not nest | 5 |
 | `#RMK` | `;` to the end of the line | 5 |
 | `#TGN` | a tag name: letters, digits, underscore | 8.1 |
@@ -248,7 +255,15 @@ A `%` in the **first column** escapes the rest of the line (section 6); a
 
 A token ends before the first character that cannot continue a symbol
 (section 7), so `e2e4` is one bad token rather than the two moves `e2` and
-`e4`.
+`e4` — and likewise `12e4` is not the move number `12` followed by `e4`.
+The one exception is the asterisk, which section 7 makes a token by itself
+and self-terminating, so `*1. e4` is a finished game and then another.
+
+Two bounds follow from the same section. A move number starts at 1 —
+section 8.2.2 says the indication gives the number of the move that
+follows, and there is no move zero — and neither a move number nor a glyph
+value may run past nine digits, which is far beyond any real game and keeps
+an absurd literal away from the number parser.
 
 ### Rules
 

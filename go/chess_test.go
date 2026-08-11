@@ -9,6 +9,7 @@ package tabnaschess
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"regexp"
 	"strings"
@@ -391,3 +392,27 @@ func itoa(n int) string {
 	}
 	return out
 }
+
+// The cached parser behind the optionless Parse is read only after
+// sync.Once has run. This fails under `go test -race` if that read moves
+// back in front of the initializer's write.
+func TestParseIsRaceFreeOnFirstUse(t *testing.T) {
+	const n = 8
+	done := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			db, err := Parse("1. e4 e5 *")
+			if nil == err && 1 != len(db) {
+				err = errCount
+			}
+			done <- err
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-done; nil != err {
+			t.Fatal(err)
+		}
+	}
+}
+
+var errCount = errors.New("expected exactly one game")

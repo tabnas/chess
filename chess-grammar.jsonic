@@ -87,9 +87,11 @@
     { s: '#ELEM' p: movetext b: 1 g: 'game,movetext' }
     { s: '#RES' a: '@result-open' g: 'game,result' }
   ]
+  # 8.2.6: the termination marker "always occurs as the last element", so
+  # once this game has one, anything further starts the next game.
   rule: game: close: [
     { s: '#OS' p: tag b: 1 c: '@more-tags' g: 'game,tag' }
-    { s: '#ELEM' p: movetext b: 1 g: 'game,movetext' }
+    { s: '#ELEM' p: movetext b: 1 c: '@no-result' g: 'game,movetext' }
     { s: '#RES' a: '@result-close' g: 'game,result' }
     { s: '#ZZ' g: 'game,end' }
     { b: 1 g: 'game,more' }

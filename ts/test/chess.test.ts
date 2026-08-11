@@ -46,6 +46,17 @@ describe('plugin', () => {
 })
 
 describe('start rule', () => {
+  // The database entry points parse a database, and their types say so:
+  // `start` is not among the options they accept — @ts-expect-error FAILS
+  // the build if that ever type-checks again — and it is forced at
+  // runtime too, for callers with no types to stop them.
+  test('parse and parseGame always parse a database', () => {
+    // @ts-expect-error start is not a DatabaseOptions field
+    const db = parse('e4', { start: 'move' })
+    assert.ok(Array.isArray(db))
+    assert.strictEqual(db[0].moves[0].san, 'e4')
+  })
+
   test('move start rule returns one move', () => {
     const move: Move = mk({ start: 'move' }).parse('Qa6xb7#')
     assert.deepStrictEqual(move, {
@@ -212,10 +223,23 @@ describe('tag pairs', () => {
     assert.throws(() => parse('["x" Event]\n*'))
   })
 
-  test('prototype-polluting tag names are refused', () => {
-    const game = parseGame('[__proto__ "x"]\n*') as Game
-    assert.notStrictEqual(({} as any).x, 'x')
-    assert.ok(game)
+  // PGN spec 8.1 allows any name of letters, digits and underscore, so
+  // `__proto__` is a legal tag name. On an ordinary object that assignment
+  // would set the prototype instead of a property and the tag would vanish
+  // from the result, which is why the tag map has a null prototype.
+  test('a name the host language reserves is still a tag', () => {
+    const game = parseGame('[__proto__ "x"]\n[constructor "y"]\n*') as Game
+    assert.strictEqual(game.tags['__proto__'], 'x')
+    assert.strictEqual(game.tags['constructor'], 'y')
+    // Compare against a JSON-parsed expectation: an object LITERAL with a
+    // `__proto__` key sets the prototype rather than an own property, so
+    // it could never match what the parser correctly produced.
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(game.tags)),
+      JSON.parse('{"__proto__":"x","constructor":"y"}'),
+    )
+    // And nothing leaked onto Object.prototype.
+    assert.strictEqual(({} as any).constructor, Object)
   })
 })
 

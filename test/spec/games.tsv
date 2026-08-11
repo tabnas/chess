@@ -25,6 +25,12 @@ input	expected	opts
 [A "1"]\n1. e4\n\n[A "2"]\n1. d4	[{"tags":{"A":"1"},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w"}]},{"tags":{"A":"2"},"moves":[{"san":"d4","piece":"P","to":"d4","number":1,"side":"w"}]}]
 # Blank lines between games are conventional, not required.
 [A "1"]1. e4 1-0[A "2"]1. d4 0-1	[{"tags":{"A":"1"},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w"}],"result":"1-0"},{"tags":{"A":"2"},"moves":[{"san":"d4","piece":"P","to":"d4","number":1,"side":"w"}],"result":"0-1"}]
+# 7: the asterisk "is a token by itself... It is self terminating", unlike
+# the three symbol-form markers — so `*` needs no whitespace after it.
+*1. e4 *	[{"tags":{},"moves":[],"result":"*"},{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w"}],"result":"*"}]
+# 8.2.6: the marker "always occurs as the last element", so movetext after
+# one belongs to the next game.
+1. e4 1-0 1. d4 0-1	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w"}],"result":"1-0"},{"tags":{},"moves":[{"san":"d4","piece":"P","to":"d4","number":1,"side":"w"}],"result":"0-1"}]
 # A comment before the first move annotates the game, not a move.
 {a foreword} 1. e4 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w"}],"comments":[{"kind":"brace","text":"a foreword"}],"result":"*"}]
 # A tag pair after the movetext has started belongs to the NEXT game: a tag

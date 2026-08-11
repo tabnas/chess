@@ -14,6 +14,11 @@ input	expected	opts
 # Layout is free: the four tokens need not share a line.
 [ Event "x" ]	{"tags":{"Event":"x"},"moves":[]}	{"start":"game"}
 [Event\n"x"]	{"tags":{"Event":"x"},"moves":[]}	{"start":"game"}
+# 8.1 allows any name of letters, digits and underscore — including names
+# a host language reserves. They are tags like any other.
+[__proto__ "x"]	{"tags":{"__proto__":"x"},"moves":[]}	{"start":"game"}
+[constructor "x"]	{"tags":{"constructor":"x"},"moves":[]}	{"start":"game"}
+[toString "x"]	{"tags":{"toString":"x"},"moves":[]}	{"start":"game"}
 # 8.1: a tag name should not repeat. The first value wins.
 [Event "one"]\n[Event "two"]	{"tags":{"Event":"one"},"moves":[]}	{"start":"game"}
 # --- the seven tag roster, 8.1.1 ---

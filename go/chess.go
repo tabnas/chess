@@ -110,6 +110,7 @@ const grammarText = `
           "s": "#ELEM",
           "p": "movetext",
           "b": 1,
+          "c": "@no-result",
           "g": "game,movetext"
         },
         {
@@ -453,11 +454,14 @@ func sanPattern(strict bool) *regexp.Regexp {
 
 var (
 	// Move number indication (8.2.2): digits, then zero or more periods,
-	// with optional space between.
-	moveNumber = regexp.MustCompile(`^[0-9]+(?:[ \t]*\.+)?`)
+	// with optional space between. The number starts at 1 — the indication
+	// gives "the move number of the immediately following white move", and
+	// there is no move zero — and nine digits is far past any real game,
+	// which also stops an absurd literal reaching the number parser.
+	moveNumber = regexp.MustCompile(`^[1-9][0-9]{0,8}(?:[ \t]*\.+)?`)
 
 	// Numeric annotation glyph (8.2.4).
-	nag = regexp.MustCompile(`^\$[0-9]+`)
+	nag = regexp.MustCompile(`^\$[0-9]{1,9}`)
 
 	// Game termination marker (8.2.6).
 	result = regexp.MustCompile(`^(?:1-0|0-1|1/2-1/2|\*)`)
@@ -703,19 +707,28 @@ func makeSanMatcher(tin tabnas.Tin, re *regexp.Regexp) tabnas.LexMatcher {
 	})
 }
 
-// A move number indication is digits and periods, but the `1` of a `1-0`
-// or `1/2-1/2` termination marker is not one.
+// A number written WITHOUT periods must still end its symbol token (spec
+// 7), or `12e4` would lex as move number 12 plus the move e4 rather than
+// as the one bad token it is — and that also keeps the `1` of a `1-0` or
+// `1/2-1/2` termination marker out.
 func makeMoveNumberMatcher(tin tabnas.Tin) tabnas.LexMatcher {
 	return tokenAt("#MVN", tin, moveNumber, func(src string, start int, m []string) (string, bool) {
 		if strings.Contains(m[0], ".") {
 			return m[0], true
 		}
-		return m[0], endsToken(src, start+len(m[0]), "")
+		return m[0], endsToken(src, start+len(m[0]), "/")
 	})
 }
 
+// Three of the four markers are symbol tokens and so must end at a
+// non-symbol character; the asterisk "is a token by itself... It is self
+// terminating" (spec 7), which is what lets `*1. e4` close one game and
+// open the next.
 func makeResultMatcher(tin tabnas.Tin) tabnas.LexMatcher {
 	return tokenAt("#RES", tin, result, func(src string, start int, m []string) (string, bool) {
+		if "*" == m[0] {
+			return m[0], true
+		}
 		return m[0], endsToken(src, start+len(m[0]), "/")
 	})
 }
@@ -910,6 +923,14 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 				return true
 			}
 			return 0 == len(g.Moves) && "" == g.Result
+		}),
+
+		// PGN spec 8.2.6: the termination marker is the last element of a
+		// movetext section, so movetext after one belongs to the next game.
+		// This is what lets `*1. e4 *` be two games.
+		"@no-result": tabnas.AltCond(func(r *tabnas.Rule, _ *tabnas.Context) bool {
+			g, ok := r.Node.(*Game)
+			return !ok || "" == g.Result
 		}),
 
 		"@move": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
@@ -1283,14 +1304,21 @@ func Make(opts ...Options) *tabnas.Tabnas {
 	return j
 }
 
-// Parse reads a PGN database (zero or more games).
+// Parse reads a PGN database (zero or more games). Start is forced to
+// "pgn": this function parses a database, and its return type says so. Use
+// Make for another entry rule.
+//
+// The cached parser is read only AFTER defaultOnce.Do, so a first
+// concurrent call cannot race the initializer's write.
 func Parse(src string, opts ...Options) (Database, error) {
-	j := defaultParser
+	var j *tabnas.Tabnas
 	if 0 == len(opts) {
 		defaultOnce.Do(func() { defaultParser = Make() })
 		j = defaultParser
 	} else {
-		j = Make(opts[0])
+		o := opts[0]
+		o.Start = "pgn"
+		j = Make(o)
 	}
 
 	out, err := j.Parse(src)
@@ -1304,7 +1332,8 @@ func Parse(src string, opts ...Options) (Database, error) {
 	return *db, nil
 }
 
-// ParseGame reads the first game of src, or nil if there is none.
+// ParseGame reads the first game of src, or nil if there is none. As with
+// Parse, the start rule is always "pgn".
 func ParseGame(src string, opts ...Options) (*Game, error) {
 	db, err := Parse(src, opts...)
 	if nil != err {

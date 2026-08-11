@@ -92,6 +92,7 @@ const grammarText = `
           "s": "#ELEM",
           "p": "movetext",
           "b": 1,
+          "c": "@no-result",
           "g": "game,movetext"
         },
         {
@@ -413,17 +414,27 @@ function sanPattern(strict: boolean): RegExp {
 }
 
 // Move number indication, PGN spec 8.2.2: digits, then zero or more
-// periods, with optional space between. The lookahead keeps the `1` of a
-// `1-0` or `1/2-1/2` termination marker out of it.
-const MOVE_NUMBER = /^\d+(?![-/])(?:[ \t]*\.+)?/
+// periods, with optional space between.
+//
+// Two guards. A number written WITHOUT periods must still end its symbol
+// token (spec 7), or `12e4` would lex as move number 12 plus the move e4
+// rather than as the one bad token it is — and that also keeps the `1` of
+// a `1-0` or `1/2-1/2` termination marker out. And the number starts at 1:
+// the indication gives "the move number of the immediately following white
+// move" (8.2.2), and there is no move zero. Nine digits is far past any
+// real game and stops an absurd literal reaching the number parser.
+const MOVE_NUMBER = /^[1-9]\d{0,8}(?:[ \t]*\.+|(?![A-Za-z0-9_+#=:/-]))/
 
 // Numeric annotation glyph, PGN spec 8.2.4. The value must be 0..255;
 // import format is not fussy about that, export format is.
-const NAG = /^\$\d+/
+const NAG = /^\$\d{1,9}/
 const NAG_STRICT = /^\$(?:25[0-5]|2[0-4]\d|1\d\d|\d\d?)(?!\d)/
 
-// Game termination marker, PGN spec 8.2.6.
-const RESULT = /^(?:1-0|0-1|1\/2-1\/2|\*)(?![A-Za-z0-9_+#=:/-])/
+// Game termination marker, PGN spec 8.2.6. Three of the four are symbol
+// tokens and so must end at a non-symbol character; the asterisk "is a
+// token by itself... It is self terminating" (spec 7), which is what lets
+// `*1. e4` close one game and open the next.
+const RESULT = /^(?:(?:1-0|0-1|1\/2-1\/2)(?![A-Za-z0-9_+#=:/-])|\*)/
 
 // Tag name, PGN spec 8.1: letters, digits and underscore only.
 const TAG_NAME = /^[A-Za-z0-9_]+/
@@ -456,7 +467,7 @@ export function stripCommands(text: string): string {
  * Take a SAN move string apart. Returns `undefined` if the string is not a
  * SAN move. Exported for callers that hold a move string already.
  */
-export function parseSan(src: string, options?: ChessOptions): Move | undefined {
+export function parseSan(src: string, options?: Pick<ChessOptions, 'strict'>): Move | undefined {
   const re = sanPattern(true === options?.strict)
   const m = re.exec(src)
   if (null == m || m[0].length !== src.length) return undefined
@@ -643,7 +654,11 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
     },
 
     '@game-bo': (r: Rule) => {
-      r.node = { tags: {}, moves: [] } as Game
+      // A null-prototype tag map. PGN spec 8.1 allows any name of letters,
+      // digits and underscore, which includes `__proto__` — and on an
+      // ordinary object that assignment sets the prototype instead of a
+      // property, so the tag would vanish from the parse result.
+      r.node = { tags: Object.create(null), moves: [] } as Game
     },
 
     // `movetext` normally inherits the enclosing line and writes into it.
@@ -677,6 +692,11 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       const game = r.node as Game
       return 0 === game.moves.length && null == game.result
     },
+
+    // PGN spec 8.2.6: the termination marker is the last element of a
+    // movetext section, so movetext after one belongs to the next game.
+    // This is what lets `*1. e4 *` be two games.
+    '@no-result': (r: Rule) => null == (r.node as Game).result,
 
     '@move': (r: Rule, ctx: Context) => {
       const line = lineOf(r)
@@ -845,13 +865,23 @@ Chess.defaults = {
 
 // --- Convenience entry points --------------------------------------------
 
+/**
+ * Options for the database entry points. `start` is not among them: these
+ * two functions parse a database, and their return types say so. Use the
+ * plugin directly — `new Tabnas().use(Chess, { start: 'move' })` — for
+ * another entry rule.
+ */
+export type DatabaseOptions = Omit<ChessOptions, 'start'>
+
 /** Parse a PGN database (zero or more games). */
-export function parse(src: string, options?: ChessOptions): Database {
-  return new Tabnas().use(Chess, options).parse(src)
+export function parse(src: string, options?: DatabaseOptions): Database {
+  // `start` is forced, not merely absent from the type: a JavaScript
+  // caller has no type to stop them, and the return type would be a lie.
+  return new Tabnas().use(Chess, { ...options, start: 'pgn' }).parse(src)
 }
 
 /** Parse a single game, or `undefined` if the source holds none. */
-export function parseGame(src: string, options?: ChessOptions): Game | undefined {
+export function parseGame(src: string, options?: DatabaseOptions): Game | undefined {
   return parse(src, options)[0]
 }
 
