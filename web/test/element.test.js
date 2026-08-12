@@ -88,12 +88,12 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('the starting position has 32 pieces on it', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     assert.strictEqual(await game.locator('text.pc').count(), 32)
   })
 
   test('stepping forward plays the move and marks it', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     await game.locator('#first').click()
     await game.locator('#next').click()
 
@@ -104,14 +104,14 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('stepping back returns to the starting position', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     await game.locator('#prev').click()
     assert.strictEqual(await game.locator('.mv.on').count(), 0)
     assert.strictEqual(await game.locator('.ply').textContent(), '0 / 85')
   })
 
   test('the arrow keys step too', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     // Focus the host itself. Clicking it would land in the notation panel
     // and jump to whichever move happened to be under the pointer.
     await game.evaluate((el) => el.focus())
@@ -123,7 +123,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('clicking a move jumps to it and fires chess-move', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     const seen = page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -138,7 +138,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('the end of the game is the position after the last move', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     await game.locator('#last').click()
     assert.strictEqual(await game.locator('.ply').textContent(), '85 / 85')
     // The Fischer-Spassky ending, agreed drawn after 43. Re6: rook, king
@@ -147,7 +147,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('flipping swaps which corner a1 is in', async () => {
-    const game = page.locator('chess-view').first()
+    const game = page.locator('#game-fischer')
     const first = () => game.locator('text.co.file').first().textContent()
     assert.strictEqual(await first(), 'a')
     await game.locator('#flip').click()
@@ -157,12 +157,12 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('orientation="black" starts flipped', async () => {
-    const game = page.locator('chess-view').nth(1)
+    const game = page.locator('#game-immortal')
     assert.strictEqual(await game.locator('text.co.file').first().textContent(), 'h')
   })
 
   test('a variation is navigable, and ⏮ leaves it', async () => {
-    const game = page.locator('chess-view').nth(1)
+    const game = page.locator('#game-immortal')
     const inVariation = game.locator('.var .mv').first()
     await inVariation.click()
     assert.strictEqual(await game.locator('.mv.on').textContent(), 'd6')
@@ -177,7 +177,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('a move that is legal notation but not a legal move is flagged', async () => {
-    const game = page.locator('chess-view').last()
+    const game = page.locator('#game-illegal')
     assert.strictEqual(await game.locator('.mv.bad').textContent(), 'Qxh8')
     assert.match(await game.locator('.note.bad').textContent(), /not a legal move/)
   })
@@ -200,16 +200,49 @@ describe('<chess-view> in a browser', { skip }, () => {
     assert.strictEqual(await game.locator('.ply').textContent(), '0 / 1')
   })
 
-  test('source that is not chess notation reports the syntax error', async () => {
-    await page.evaluate(() => {
+  /* Error messages. The grammar supplies the chess vocabulary; the
+   * component adds the position, widens the single character the lexer
+   * stopped on to the whole word, and names a bracket left open. None of
+   * it is any use if a terminal escape code comes along for the ride. */
+
+  test('an error names the notation and where it is, with no escape codes', async () => {
+    const note = await page.evaluate(async () => {
       const el = document.createElement('chess-view')
-      el.id = 'nonsense'
       el.textContent = '1. e4 zz'
       document.body.append(el)
+      await new Promise((r) => setTimeout(r, 50))
+      const text = el.shadowRoot.querySelector('.note.bad').textContent
+      el.remove()
+      return text
     })
-    const note = page.locator('#nonsense .note.bad')
-    await note.waitFor()
-    assert.match(await note.textContent(), /unexpected/)
+    // The escape character itself, not the bracket that follows it in a
+    // CSI sequence: `[` is ordinary text and would pass for the wrong reason.
+    assert.ok(!note.includes('\u001b'), 'an ANSI escape reached the page')
+    assert.doesNotMatch(note, /\[tabnas\//, 'the engine error code reached the page')
+    assert.strictEqual(note, '“zz” is not chess notation — line 1, column 7.')
+  })
+
+  test('notation that runs out names the bracket left open', async () => {
+    const notes = await page.evaluate(async () => {
+      const out = []
+      for (const src of ['1. e4 (e5', '1. e4 {oops', '[Event "x" 1. e4 *']) {
+        const el = document.createElement('chess-view')
+        el.textContent = src
+        document.body.append(el)
+        await new Promise((r) => setTimeout(r, 50))
+        out.push(el.shadowRoot.querySelector('.note.bad').textContent)
+        el.remove()
+      }
+      return out
+    })
+    assert.strictEqual(
+      notes[0],
+      'The notation ends before the variation opened at line 1, column 7 is closed.',
+    )
+    assert.strictEqual(notes[1], 'This comment is never closed — line 1, column 7.')
+    // Stopped on a real token, but the tag is the actual mistake.
+    assert.match(notes[2], /^“1\.” is not chess notation — line 1, column 12\./)
+    assert.match(notes[2], /The tag opened at line 1, column 1 is still open\.$/)
   })
 
   /* Commentary. The supplement asks presentation software to strip command
@@ -218,7 +251,7 @@ describe('<chess-view> in a browser', { skip }, () => {
    * same commentary on screen twice. */
 
   test('command markup is stripped from the prose and shown as a chip', async () => {
-    const game = page.locator('chess-view').filter({ hasText: 'Rated Blitz' }).first()
+    const game = page.locator('#game-blitz')
     await game.locator('.mv').first().waitFor()
 
     const prose = await game.locator('.cm').allTextContents()
@@ -232,7 +265,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('commentary="panel" moves the prose out of the move list', async () => {
-    const game = page.locator('chess-view[commentary="panel"]').first()
+    const game = page.locator('#game-opera')
     await game.locator('.mv').first().waitFor()
 
     // Nothing inline any more...
@@ -248,8 +281,30 @@ describe('<chess-view> in a browser', { skip }, () => {
     assert.strictEqual(await box.textContent(), '')
   })
 
+  /* PGN spec 6: a `%` in the FIRST column means the rest of the line is
+   * ignored. A bracket in such a line is not a bracket, so the open-bracket
+   * hint must not claim one is waiting. */
+  test('a bracket on a %-escaped line is not an open bracket', async () => {
+    const notes = await page.evaluate(async () => {
+      const out = []
+      for (const src of ['% [ ignored\n1. e4 zz', '[Event "x" 1. e4 *']) {
+        const el = document.createElement('chess-view')
+        el.textContent = src
+        document.body.append(el)
+        await new Promise((r) => setTimeout(r, 50))
+        out.push(el.shadowRoot.querySelector('.note.bad').textContent)
+        el.remove()
+      }
+      return out
+    })
+    // The escaped bracket is invisible, so no "still open" clause...
+    assert.strictEqual(notes[0], '“zz” is not chess notation — line 2, column 7.')
+    // ...while a real unclosed tag still earns one.
+    assert.match(notes[1], /The tag opened at line 1, column 1 is still open\.$/)
+  })
+
   test('the switches each take a part of the UI away', async () => {
-    const bare = page.locator('chess-view[notation="hidden"]').first()
+    const bare = page.locator('#game-diagram')
     await bare.locator('rect.sq').first().waitFor()
 
     assert.strictEqual(await bare.locator('.side').count(), 1, 'still in the DOM')
@@ -264,7 +319,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   /* The source pane. */
 
   test('source="edit" shows the notation and re-parses what you type', async () => {
-    const game = page.locator('chess-view[source="edit"]').first()
+    const game = page.locator('#game-editor')
     const editor = game.locator('textarea')
     await editor.waitFor()
 
@@ -281,9 +336,8 @@ describe('<chess-view> in a browser', { skip }, () => {
     await page.waitForFunction(
       () =>
         '0 / 8' ===
-        document
-          .querySelector('chess-view[source="edit"]')
-          ?.shadowRoot?.querySelector('.ply')?.textContent,
+        document.getElementById('game-editor')?.shadowRoot?.querySelector('.ply')
+          ?.textContent,
       null,
       { timeout: 5000 },
     )
@@ -291,7 +345,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('typing keeps the board rather than blanking it on every keystroke', async () => {
-    const game = page.locator('chess-view[source="edit"]').first()
+    const game = page.locator('#game-editor')
     const editor = game.locator('textarea')
 
     const before = await game.locator('text.pc').count()
@@ -305,7 +359,7 @@ describe('<chess-view> in a browser', { skip }, () => {
   })
 
   test('editing fires chess-source, and f types an f rather than flipping', async () => {
-    const game = page.locator('chess-view[source="edit"]').first()
+    const game = page.locator('#game-editor')
     const editor = game.locator('textarea')
 
     const corner = () => game.locator('text.co.file').first().textContent()

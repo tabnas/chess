@@ -143,6 +143,134 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+const OPENER: Record<string, string> = { '(': 'variation', '{': 'comment', '[': 'tag' }
+
+/**
+ * The first bracket that is opened and never closed, if there is one.
+ *
+ * Deliberately approximate. It skips the inside of a comment, a
+ * rest-of-line remark and a tag value, because a bracket in prose is
+ * prose — but it does not pretend to be the lexer. The result is only ever
+ * used to make an error message more helpful, so being wrong costs a
+ * vaguer sentence and nothing else.
+ */
+function unclosed(source: string): { char: string; row: number; col: number } | undefined {
+  const stack: { char: string; row: number; col: number }[] = []
+  const opens: Record<string, string> = { ')': '(', '}': '{', ']': '[' }
+  let row = 1
+  let col = 1
+  let inComment = false
+  let inRemark = false
+  let inString = false
+
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i]
+
+    if ('\n' === c) {
+      row++
+      col = 1
+      inRemark = false
+      // A brace comment may span lines (PGN spec 5); a tag value may not
+      // (8.1), so an unclosed quote ends with the line rather than eating
+      // the rest of the game.
+      inString = false
+      continue
+    }
+
+    if (inRemark) {
+      /* rest-of-line comment: nothing in here is structure */
+    } else if ('%' === c && 1 === col) {
+      // PGN spec 6: a `%` in the FIRST column means the rest of the line is
+      // ignored, so a bracket in it is not a bracket. The lexer's escape
+      // matcher tests exactly this, and so must anything reading along
+      // behind it.
+      inRemark = true
+    } else if (inComment) {
+      if ('}' === c) {
+        inComment = false
+        stack.pop()
+      }
+    } else if (inString) {
+      if ('\\' === c) {
+        i++
+        col++
+      } else if ('"' === c) {
+        inString = false
+      }
+    } else if ('"' === c) {
+      inString = true
+    } else if (';' === c) {
+      inRemark = true
+    } else if (null != opens[c]) {
+      if (0 < stack.length && stack[stack.length - 1].char === opens[c]) stack.pop()
+    } else if ('(' === c || '[' === c || '{' === c) {
+      stack.push({ char: c, row, col })
+      if ('{' === c) inComment = true
+    }
+
+    col++
+  }
+
+  return stack[0]
+}
+
+function sentence(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/**
+ * Turn a parse error into a sentence a reader can act on.
+ *
+ * The grammar already replaces the engine's wording with the vocabulary of
+ * chess notation, so most of this is presentation: drop the
+ * `[tabnas/code]:` prefix, which names a code nobody looking at a
+ * chessboard needs, and say where.
+ *
+ * Two things the grammar cannot do from inside, because both need the
+ * whole source. It reports the single character the lexer stopped on,
+ * where a reader would point at the whole word; and when the notation
+ * simply runs out, the offending text is empty and what is actually
+ * useful is the bracket that was never closed.
+ */
+function explain(err: unknown, source: string): string {
+  const e = err as { message?: string; code?: string; lineNumber?: number; columnNumber?: number }
+  const clean = String(e.message ?? '').split('\n')[0].replace(/^\[[^\]]*\]:\s*/, '')
+  const row = e.lineNumber
+  const col = e.columnNumber
+
+  if (null == row || null == col) return sentence(clean || 'this is not chess notation') + '.'
+
+  const line = source.split('\n')[row - 1] ?? ''
+  const at = `line ${row}, column ${col}`
+
+  // Only `unexpected` is rephrased: the other codes are already about a
+  // specific thing (a comment, a tag value) and say it better than a
+  // position alone would.
+  if ('unexpected' === e.code) {
+    const open = unclosed(source)
+
+    // Past the end of the line: the notation ran out mid-game. The only
+    // useful thing to say is which bracket is still waiting.
+    if (col > line.length) {
+      return open
+        ? `The notation ends before the ${OPENER[open.char]} opened at ` +
+            `line ${open.row}, column ${open.col} is closed.`
+        : `The notation ends in the middle of a game, at ${at}.`
+    }
+
+    // Stopped on something concrete — but if a bracket is also still open,
+    // that is usually what actually went wrong, and the parser stopping
+    // here is the consequence.
+    const found = /^\S+/.exec(line.slice(col - 1))
+    const also = open
+      ? ` The ${OPENER[open.char]} opened at line ${open.row}, column ${open.col} is still open.`
+      : ''
+    if (found) return `“${found[0]}” is not chess notation — ${at}.${also}`
+  }
+
+  return `${sentence(clean)} — ${at}.`
+}
+
 /**
  * Replay a game, resolving each parsed move against the running position.
  *
@@ -297,8 +425,12 @@ const TEMPLATE = `
     <div class="tags" id="tags"></div>
     <div class="moves" id="moves" part="moves" tabindex="0"></div>
     <div class="comment" id="comment" part="commentary" role="note"></div>
-    <div class="note" id="note" role="status"></div>
   </div>
+  <!-- Outside the side panel on purpose: this reports on the component,
+       not on the notation, so notation="hidden" must not silence it. A
+       board with no visible reason for being empty is worse than none.
+       (No backticks in here: TEMPLATE is a template literal.) -->
+  <div class="note" id="note" part="status" role="status"></div>
   <div class="srcpane" part="source">
     <textarea id="src" part="editor" spellcheck="false" autocapitalize="off"
       autocorrect="off" aria-label="Chess notation source"></textarea>
@@ -453,9 +585,8 @@ export class ChessViewElement extends Base {
     try {
       games = parse(source)
     } catch (err) {
-      // A syntax error: the source is not chess notation. The engine's
-      // message already names the row, column and offending characters.
-      return fail(String((err as Error).message).split('\n')[0], true)
+      // A syntax error: the source is not chess notation.
+      return fail(explain(err, source), true)
     }
 
     const which = Number(this.getAttribute('game') || 0)

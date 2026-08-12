@@ -130,6 +130,7 @@
             { "name": "notation", "description": "The side panel: tags, moves and status." },
             { "name": "moves", "description": "The move list alone." },
             { "name": "commentary", "description": "The commentary box, in panel mode." },
+            { "name": "status", "description": "The status line: errors, and why a line stopped." },
             { "name": "source", "description": "The source pane." },
             { "name": "editor", "description": "The textarea inside the source pane." }
           ],

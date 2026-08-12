@@ -32,7 +32,7 @@ input	expected	opts
 1. e4 1. d4) *	ERROR
 [Event "x" *	ERROR
 [Event "x"] ] *	ERROR
-1. e4 {unterminated *	ERROR:unterminated
+1. e4 {unterminated *	ERROR:this comment is never closed
 # --- tokens with no place in the movetext ---
 1. e4 "a string" *	ERROR
 1. e4 hello *	ERROR
@@ -46,3 +46,9 @@ input	expected	opts
 1. e4 0-2 *	ERROR
 1. e4 1/2 *	ERROR
 1. e4 1--0 *	ERROR
+# --- the messages themselves, which the grammar customises away from the
+# engine's own wording. Both runtimes set the same templates, so these rows
+# check the two stay in step as well as that the text is right.
+1. e4 zz *	ERROR:not chess notation
+1. Ke9 *	ERROR:not chess notation
+[Event "x\n\n1. e4 *	ERROR:a tag value cannot contain a line break
