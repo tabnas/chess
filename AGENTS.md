@@ -66,7 +66,7 @@ an inferred field would make the parser a chess engine, and a bad one.
 | [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
 | [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by both runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
-| [`web/`](web/) | The `<chess-game>` web component — a board view built on the TS package, bundled self-contained by `web/build.js`. **Not** part of the parser: it holds the legal move generator the parser deliberately does not have. See [`web/README.md`](web/README.md). |
+| [`web/`](web/) | The `<chess-view>` web component — a board view built on the TS package, bundled self-contained by `web/build.js`. **Not** part of the parser: it holds the legal move generator the parser deliberately does not have. See [`web/README.md`](web/README.md). |
 
 ## Repo-specific gotchas
 

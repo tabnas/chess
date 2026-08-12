@@ -211,6 +211,70 @@ svg.board { display: block; width: 100%; height: auto; }
 .note:empty { display: none; }
 .note.bad { color: var(--bad); }
 
+/* A command the supplement gives a meaning to — a clock, an evaluation —
+   shown as its own chip rather than left as markup in the prose. */
+.cmd {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  margin: 0 0.15rem;
+  white-space: nowrap;
+}
+
+.comment {
+  padding: 0.5rem 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.comment:empty { display: none; }
+.comment p { margin: 0.35rem 0 0; }
+.comment p:first-child { margin-top: 0; }
+.comment .who {
+  font-family: var(--mono);
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.srcpane { flex: 1 1 100%; min-width: 0; }
+.srcpane textarea {
+  display: block;
+  width: 100%;
+  min-height: 6rem;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 0.5rem 0.6rem;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  tab-size: 2;
+}
+.srcpane textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.srcpane textarea:read-only { color: var(--muted); resize: none; }
+
+/* The switches. Each hides a part of the UI without the component having
+   to know it is hidden — the layout is flex, so a removed pane simply
+   stops taking space. */
+:host(:not([source="view"]):not([source="edit"])) .srcpane { display: none; }
+:host([controls="hidden"]) .bar { display: none; }
+:host([notation="hidden"]) .side { display: none; }
+:host([tags="hidden"]) .tags { display: none; }
+:host([coordinates="hidden"]) .co { display: none; }
+
+/* With the notation gone the board is the whole component, so let it have
+   the width rather than sitting in a column of its own. */
+:host([notation="hidden"]) .boardpane { flex: 1 1 auto; }
+
 @media (max-width: 30rem) {
   .wrap { gap: 0.75rem; }
   .boardpane { width: 100%; }

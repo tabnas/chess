@@ -228,9 +228,30 @@ name keeps the first value (8.1 says a name should not repeat).
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | the word after `%` |
-| `args` | `string[]` | the rest, split on commas and trimmed |
+| `args` | `string[]` | the operands, in order |
 
-`[%name]` with no argument gives `args: []`.
+`[%name]` with no operand gives `args: []`.
+
+The syntax is the [PGN Specification
+Supplement](https://www.ficsgames.org/pgnsupp.txt)'s (final draft, 2001),
+not the 1994 standard's. An operand is either **bare** — any character but
+a comma or a right bracket, trimmed — or a **double-quoted string**, which
+may contain both and keeps its content without its quotes:
+
+```js
+parseGame('1. e4 {[%src "Lasker, Common Sense in Chess"]} *')
+  .moves[0].comments[0].commands
+// => [{ name: 'src', args: ['Lasker, Common Sense in Chess'] }]
+```
+
+Empty operands — from `a,,b`, or a trailing comma — contribute nothing. A
+command that never closes is not a command: it stays in `text` as prose,
+which is what the supplement asks of a reader that cannot make sense of
+one.
+
+The supplement defines four command names, all times: `clk`, `egt`, `emt`
+and `mct`. `eval`, `csl` and `cal` are de facto, from lichess and
+ChessBase. This parses the syntax and interprets none of the names.
 
 ## Notation accepted
 

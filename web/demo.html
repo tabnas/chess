@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>&lt;chess-game&gt;</title>
+<title>&lt;chess-view&gt;</title>
 
 <!-- The whole component. One file, no other requests: @tabnas/chess and
      the @tabnas/parser engine are bundled in, the board is inline SVG. -->
-<script src="./dist/chess-game.js"></script>
+<script src="./dist/chess-view.js"></script>
 
 <style>
   :root { color-scheme: light dark; }
@@ -26,25 +26,25 @@
     background: #8881; padding: 0.75rem 1rem; border-radius: 6px;
     overflow-x: auto;
   }
-  chess-game { margin: 0.75rem 0; }
+  chess-view { margin: 0.75rem 0; }
 </style>
 </head>
 <body>
 
-<h1>&lt;chess-game&gt;</h1>
+<h1>&lt;chess-view&gt;</h1>
 <p>
   A chessboard view of a PGN game. The notation is the element's text
   content — there is no other markup and no configuration.
 </p>
 
-<pre>&lt;script src="chess-game.js"&gt;&lt;/script&gt;
+<pre>&lt;script src="chess-view.js"&gt;&lt;/script&gt;
 
-&lt;chess-game&gt;1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2&lt;/chess-game&gt;</pre>
+&lt;chess-view&gt;1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2&lt;/chess-view&gt;</pre>
 
 <h2>A whole game</h2>
 <p>Use the buttons, the arrow keys, or click any move in the notation.</p>
 
-<chess-game>
+<chess-view>
 [Event "F/S Return Match"]
 [Site "Belgrade, Serbia JUG"]
 [Date "1992.11.04"]
@@ -59,7 +59,7 @@ Nc4 Nxc4 22. Bxc4 Nb6 23. Ne5 Rae8 24. Bxf7+ Rxf7 25. Nxf7 Rxe1+ 26. Qxe1 Kxf7
 27. Qe3 Qg5 28. Qxg5 hxg5 29. b3 Ke6 30. a3 Kd6 31. axb4 cxb4 32. Ra5 Nd5 33.
 f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
 40. Rd6 Kc5 41. Ra6 Nf2 42. g4 Bd3 43. Re6 1/2-1/2
-</chess-game>
+</chess-view>
 
 <h2>Annotations</h2>
 <p>
@@ -68,7 +68,7 @@ f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
   rather than the mainline.
 </p>
 
-<chess-game orientation="black">
+<chess-view orientation="black">
 [Event "Immortal Game"]
 [White "Anderssen, Adolf"]
 [Black "Kieseritzky, Lionel"]
@@ -81,7 +81,7 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
 10. g4 Nf6 11. Rg1 $1 {A rook offered, and the attack begins.} cxb5 12. h4 Qg6
 13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 $3 Qxb2 18. Bd6 $3 Bxg1
 19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ $1 Nxf6 23. Be7# 1-0
-</chess-game>
+</chess-view>
 
 <h2>A study, from a set position</h2>
 <p>
@@ -89,18 +89,93 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
   the side to move come from the game rather than from move one.
 </p>
 
-<chess-game theme="dark">
+<chess-view theme="dark">
 [SetUp "1"]
 [FEN "8/6P1/8/8/8/1k6/8/K7 w - - 0 51"]
 
 51. g8=Q+ {The pawn queens with check along the long diagonal.} Kb4
 52. Qb8+ Ka4 53. Qb2 {The queen cuts the king off; the white king walks up.} 1-0
-</chess-game>
+</chess-view>
 
 <h2>Bare movetext</h2>
 <p>No tag pairs, no result marker. Import format is lax and so is this.</p>
 
-<chess-game>1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 O-O 5.Bd3 d5 6.Nf3 c5</chess-game>
+<chess-view>1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 O-O 5.Bd3 d5 6.Nf3 c5</chess-view>
+
+<h2>Commentary in a panel</h2>
+<p>
+  <code>commentary="panel"</code> moves the annotator's prose out of the move
+  list and into a box that follows the position, which reads better when
+  there is a lot of it. The notes below are original, written for this demo
+  and MIT-licensed with the rest of the repository.
+</p>
+
+<chess-view commentary="panel">
+[Event "Opera Game"]
+[Site "Paris"]
+[Date "1858.??.??"]
+[White "Morphy, Paul"]
+[Black "Duke of Brunswick and Count Isouard"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d6 {Philidor's Defence. Solid enough, but it shuts in the
+dark-squared bishop, and that bishop never does get out.} 3. d4 Bg4 {Pinning
+the knight rather than resolving the centre.} 4. dxe5 Bxf3 {Forced: after
+4... dxe5 5. Qxd8+ Kxd8 Black has lost the right to castle.} 5. Qxf3 dxe5
+6. Bc4 Nf6 7. Qb3 {One move, two attacks: the queen hits b7 while the bishop
+already looks at f7.} Qe7 8. Nc3 {Declining the b7 pawn — 8. Qxb7 Qb4+ trades
+queens, and White would rather keep them on.} c6 9. Bg5 b5 10. Nxb5 $1 {A
+piece for the open lines it buys.} cxb5 11. Bxb5+ Nbd7 12. O-O-O {Castling as
+a developing move: the rook arrives on the file of the pinned knight.} Rd8
+13. Rxd7 Rxd7 14. Rd1 {Everything White owns now bears on d7.} Qe6
+15. Bxd7+ Nxd7 16. Qb8+ $3 {Deflection. The knight has to leave the d-file,
+and the file is the game.} Nxb8 17. Rd8# 1-0
+</chess-view>
+
+<h2>Clocks and evaluations</h2>
+<p>
+  The <code>[%clk]</code> markup that lichess and chess.com put in comments
+  is <em>not</em> in the 1994 standard — it comes from the 2001
+  specification supplement, which also asks that commands be stripped before
+  display. They are, and the four that mean something to a reader are shown
+  as their own chip instead.
+</p>
+
+<chess-view>
+[Event "Rated Blitz game"]
+[TimeControl "180+0"]
+
+1. e4 { [%clk 0:03:00] [%eval 0.17] } e5 { [%clk 0:02:58] }
+2. Nf3 { [%clk 0:02:57] [%eval 0.21] Book. } Nc6 { [%clk 0:02:55] }
+3. Bb5 { [%clk 0:02:52] } a6 { [%clk 0:02:49] } 1/2-1/2
+</chess-view>
+
+<h2>The source, and editing it</h2>
+<p>
+  <code>source="edit"</code> puts the notation itself in the component and
+  re-parses as you type. A half-typed game is the normal state of an editor,
+  so the board holds its last good position rather than blinking out on
+  every keystroke.
+</p>
+
+<chess-view source="edit" commentary="panel">1. d4 d5 2. c4 {The Queen's Gambit.} e6 3. Nc3 Nf6 *</chess-view>
+
+<h2>Just a board</h2>
+<p>
+  The switches are subtractive: <code>notation</code>, <code>controls</code>,
+  <code>tags</code> and <code>coordinates</code> each take a part of the UI
+  away. With all of them gone what is left is a diagram — and the arrow keys
+  still work.
+</p>
+
+<chess-view notation="hidden" controls="hidden" coordinates="hidden" ply="33">
+[White "Morphy, Paul"]
+[Black "Duke of Brunswick and Count Isouard"]
+
+1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7
+8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7
+14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0
+</chess-view>
 
 <h2>When the notation is not a game</h2>
 <p>
@@ -109,7 +184,7 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
   legal notation but not a legal move stops the line and says so.
 </p>
 
-<chess-game>1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-game>
+<chess-view>1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-view>
 
 <script>
   // The component reports each move it shows.
