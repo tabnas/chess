@@ -165,7 +165,7 @@ this parser: a classic 2D board, controls to step through the game, and the
 notation highlighted move by move.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.2"></script>
 
 <chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>
 ```
