@@ -87,7 +87,11 @@
     color: var(--ink-mute); font-family: var(--font-heading);
     font-style: italic; font-size: 1.05rem;
   }
-  .tagline { color: var(--ink-soft); margin: 0 0 1.5rem; max-width: 40rem; }
+  .tagline { color: var(--ink-soft); margin: 0 0 0.4rem; max-width: 40rem; }
+  header .meta {
+    color: var(--ink-mute); font-size: 0.88rem; margin: 0 0 1.4rem;
+    max-width: 46rem;
+  }
 
   h1 {
     font-family: var(--font-heading);
@@ -188,6 +192,12 @@
       One script tag. Paste a game in, get a board you can step through.
       No dependencies, no configuration, no second request.
     </p>
+    <p class="meta">
+      Free and open source, MIT licensed ·
+      <a href="https://github.com/tabnas/chess">GitHub</a> ·
+      <a href="https://www.npmjs.com/package/@tabnas/chess-view">npm</a> ·
+      built with <a href="#tabnas">tabnas</a>, a parsing engine
+    </p>
   </div>
 </header>
 
@@ -198,6 +208,22 @@
   The game <em>is</em> the markup. Write the notation between the tags and
   that is the whole integration — the board, the move list, the controls and
   the parser arrive in one file.
+</p>
+
+<p>
+  <code>&lt;chess-view&gt;</code> takes a game written in
+  <abbr title="Portable Game Notation">PGN</abbr> — the format every chess
+  site and database exports — and draws it. Readers step through with the
+  buttons, the arrow keys, or by clicking any move; comments, variations
+  and annotation glyphs all come through. It is about 37&nbsp;kB over the
+  wire, it fetches nothing else, and it works on a plain HTML page as
+  readily as inside a framework.
+</p>
+<p>
+  Reading the notation is done by <a href="#tabnas">tabnas</a>, a parsing
+  engine whose grammars are data rather than code. You do not need to know
+  that to use the board — <a href="#tabnas">the last section</a> is there if
+  you want it.
 </p>
 
 <chess-view id="game-fischer">
@@ -487,7 +513,7 @@ chess-view::part(notation) { <span class="c">/* … also board, controls, moves,
 3. Bb5 { [%clk 0:02:52] } a6 { [%clk 0:02:49] } 1/2-1/2
 </chess-view>
 
-<h2>What is underneath: tabnas</h2>
+<h2 id="tabnas">What is underneath: tabnas</h2>
 <p class="lede">
   If you only wanted a board, you have it — this is the part for anyone
   wondering how the notation gets read, or who needs to teach a parser a

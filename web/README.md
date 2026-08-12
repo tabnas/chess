@@ -1,5 +1,7 @@
 # &lt;chess-view&gt;
 
+### 👉 [See it working — tabnas.github.io/chess](https://tabnas.github.io/chess/)
+
 A self-contained web component that shows a PGN game as a classic 2D
 chessboard, with controls to step through it and the notation highlighted
 move by move.
