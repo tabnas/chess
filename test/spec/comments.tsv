@@ -33,6 +33,20 @@ input	expected	opts
 1. e4 {[%clk 0:05:00]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%clk 0:05:00]"}]}]}	{"start":"movetext","commands":false}
 # A bracket that is not command markup stays plain text.
 1. e4 {see [1]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"see [1]"}]}]}	{"start":"movetext"}
+# The supplement's second kind of operand: a double-quoted string, which
+# may hold the comma and the right bracket a bare operand may not. This is
+# why finding the end of a command needs a scanner and not a regex.
+1. e4 {[%src "Lasker, Common Sense in Chess"]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%src \"Lasker, Common Sense in Chess\"]","commands":[{"name":"src","args":["Lasker, Common Sense in Chess"]}]}]}]}	{"start":"movetext"}
+1. e4 {[%note "a ] bracket"] after}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%note \"a ] bracket\"] after","commands":[{"name":"note","args":["a ] bracket"]}]}]}]}	{"start":"movetext"}
+# Quoted and bare operands mix, and a quoted one keeps its content only.
+1. e4 {[%mix bare,"quoted, with comma",tail]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%mix bare,\"quoted, with comma\",tail]","commands":[{"name":"mix","args":["bare","quoted, with comma","tail"]}]}]}]}	{"start":"movetext"}
+# An operand list that never closes is not a command at all: it stays in
+# the text, which is what the supplement asks of a reader that cannot make
+# sense of a command.
+1. e4 {[%oops unterminated}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%oops unterminated"}]}]}	{"start":"movetext"}
+1. e4 {[%oops "unterminated quote]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%oops \"unterminated quote]"}]}]}	{"start":"movetext"}
+# Two commands in one comment, the first of which holds a bracket.
+1. e4 {[%a "x]y"] mid [%clk 0:01]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%a \"x]y\"] mid [%clk 0:01]","commands":[{"name":"a","args":["x]y"]},{"name":"clk","args":["0:01"]}]}]}]}	{"start":"movetext"}
 # --- rejections ---
 1. e4 {never closed	ERROR:unterminated	{"start":"movetext"}
 1. e4 a}	ERROR	{"start":"movetext"}

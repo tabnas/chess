@@ -292,10 +292,18 @@ type Disambiguation struct {
 	Rank int    `json:"rank,omitempty"`
 }
 
-// Command is one [%name arg,arg] command inside a comment (a de facto
-// extension, not part of the PGN standard).
+// Command is one [%name operand,operand] command inside a comment.
+//
+// Not from the 1994 standard — from the PGN Specification Supplement
+// (Cowderoy, Bulsink, Templeton, Bentzen, Feist and Zakharov; final draft
+// 8 September 2001), which defines the syntax and four time commands: clk,
+// egt, emt and mct. The eval, csl and cal commands seen in lichess and
+// ChessBase exports use the same syntax without being part of it, so this
+// parses the syntax and interprets none of the names.
 type Command struct {
-	Name string   `json:"name"`
+	Name string `json:"name"`
+	// Args holds the operands in order. A quoted operand keeps its
+	// content, not its quotes.
 	Args []string `json:"args"`
 }
 
@@ -469,8 +477,9 @@ var (
 	// Tag name (8.1): letters, digits and underscore only.
 	tagName = regexp.MustCompile(`^[A-Za-z0-9_]+`)
 
-	// [%name arg,arg] markup inside a comment.
-	commandRe = regexp.MustCompile(`\[%([A-Za-z_][A-Za-z0-9_]*)(?:[ \t]+([^\]]*))?\]`)
+	// The opening of a [%name …] command inside a comment. Only the
+	// opening: where it ENDS is not a regular language — see scanCommands.
+	commandOpenRe = regexp.MustCompile(`\[%([A-Za-z_][A-Za-z0-9_]*)`)
 
 	suffixRe = regexp.MustCompile(`(?:!!|\?\?|!\?|\?!|!|\?)$`)
 	spaceRe  = regexp.MustCompile(`[ \t]+`)
@@ -488,11 +497,110 @@ var AnnotationNag = map[string]int{
 	"?!": 6,
 }
 
+// scanCommands finds every [%name operand,operand] command in a comment
+// body, returning the commands and their byte spans in text.
+//
+// A scanner rather than a regular expression, because the supplement puts
+// the terminator inside the operand grammar: an operand is either bare —
+// any ASCII but a comma or a right bracket — or a double-quoted string,
+// which may contain both. So in
+//
+//	[%src "Lasker, Common Sense in Chess (1896), p. 12]"]
+//
+// the command ends at the last bracket and holds one operand, not two.
+// `[^\]]*` would stop at the first bracket and split the citation at its
+// comma; no regular expression can do better, because matching quotes is
+// not something a regular language can express.
+//
+// Anything that does not close is not a command: it stays in Text as the
+// prose it is. The supplement is explicit that a reader which does not
+// understand a command passes it through untouched, and the same courtesy
+// is owed to something that only looks like one.
+func scanCommands(text string) ([]*Command, [][2]int) {
+	var commands []*Command
+	var spans [][2]int
+
+	space := func(at int) int {
+		for at < len(text) && (' ' == text[at] || '\t' == text[at]) {
+			at++
+		}
+		return at
+	}
+
+	for from := 0; from < len(text); {
+		loc := commandOpenRe.FindStringSubmatchIndex(text[from:])
+		if nil == loc {
+			break
+		}
+		start := from + loc[0]
+		name := text[from+loc[2] : from+loc[3]]
+		at := from + loc[1]
+		args := []string{}
+
+		// The name is terminated by the first space — or by the bracket,
+		// for a command with no operands at all.
+		if at < len(text) && (' ' == text[at] || '\t' == text[at]) {
+			at = space(at)
+
+			for {
+				if at < len(text) && '"' == text[at] {
+					close := strings.IndexByte(text[at+1:], '"')
+					if 0 > close {
+						break // unterminated: not a command
+					}
+					args = append(args, text[at+1:at+1+close])
+					at = space(at + close + 2)
+				} else {
+					end := at
+					for end < len(text) && ',' != text[end] && ']' != text[end] {
+						end++
+					}
+					// `a,,b` and a trailing comma contribute nothing.
+					if bare := strings.TrimSpace(text[at:end]); "" != bare {
+						args = append(args, bare)
+					}
+					at = end
+				}
+
+				if at < len(text) && ',' == text[at] {
+					at = space(at + 1)
+					continue
+				}
+				break
+			}
+		}
+
+		if at >= len(text) || ']' != text[at] {
+			from = start + 2 // never closed: leave it as prose
+			continue
+		}
+		at++
+
+		commands = append(commands, &Command{Name: name, Args: args})
+		spans = append(spans, [2]int{start, at})
+		from = at
+	}
+
+	return commands, spans
+}
+
 // StripCommands removes [%name ...] markup from a comment body, collapses
 // the whitespace it leaves behind, and trims.
+//
+// The supplement asks presentation software to "strip out all commands
+// before display in order to improve legibility" — without it a lichess
+// export reads "[%clk 0:03:00]" where the annotator's prose should be.
 func StripCommands(text string) string {
-	out := commandRe.ReplaceAllString(text, " ")
-	return strings.TrimSpace(spaceRe.ReplaceAllString(out, " "))
+	_, spans := scanCommands(text)
+	var b strings.Builder
+	at := 0
+	for _, span := range spans {
+		b.WriteString(text[at:span[0]])
+		b.WriteByte(' ')
+		at = span[1]
+	}
+	b.WriteString(text[at:])
+	return strings.TrimSpace(spaceRe.ReplaceAllString(b.String(), " "))
 }
 
 // ParseSan takes a single SAN move string apart. It reports ok=false
@@ -839,15 +947,7 @@ func makeComment(kind, text string, parse bool) *Comment {
 	if !parse {
 		return c
 	}
-	for _, m := range commandRe.FindAllStringSubmatch(text, -1) {
-		args := []string{}
-		for _, a := range strings.Split(m[2], ",") {
-			if a = strings.TrimSpace(a); "" != a {
-				args = append(args, a)
-			}
-		}
-		c.Commands = append(c.Commands, &Command{Name: m[1], Args: args})
-	}
+	c.Commands, _ = scanCommands(text)
 	return c
 }
 

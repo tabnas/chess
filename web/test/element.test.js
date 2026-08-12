@@ -2,7 +2,7 @@
 
 /* The component, in a real browser, loaded the way a page loads it.
  *
- * This is the test the engine tests cannot be: it runs `dist/chess-game.js`
+ * This is the test the engine tests cannot be: it runs `dist/chess-view.js`
  * through a browser's own custom-element upgrade, shadow DOM, SVG layout
  * and event handling. It also checks the claim the build makes — that the
  * file is self-contained — by counting the network requests the page
@@ -46,7 +46,7 @@ const skip = !chromium
     ? 'no Chromium binary (set CHROMIUM_PATH)'
     : false
 
-describe('<chess-game> in a browser', { skip }, () => {
+describe('<chess-view> in a browser', { skip }, () => {
   let browser
   let page
   const requests = []
@@ -61,7 +61,7 @@ describe('<chess-game> in a browser', { skip }, () => {
       if ('error' === m.type()) errors.push(m.text())
     })
     await page.goto(DEMO)
-    await page.waitForFunction(() => !!customElements.get('chess-game'))
+    await page.waitForFunction(() => !!customElements.get('chess-view'))
     await page.waitForTimeout(200)
   })
 
@@ -75,25 +75,25 @@ describe('<chess-game> in a browser', { skip }, () => {
 
   test('the bundle is self-contained: the page and the script, nothing else', () => {
     const fetched = requests.map((u) => u.split('/').pop())
-    assert.deepStrictEqual(fetched, ['index.html', 'chess-game.js'])
+    assert.deepStrictEqual(fetched, ['index.html', 'chess-view.js'])
   })
 
   test('every example on the page upgraded and drew a board', async () => {
-    const count = await page.locator('chess-game').count()
+    const count = await page.locator('chess-view').count()
     assert.ok(4 <= count, `expected several examples, got ${count}`)
     for (let i = 0; i < count; i++) {
-      const squares = await page.locator('chess-game').nth(i).locator('rect.sq').count()
+      const squares = await page.locator('chess-view').nth(i).locator('rect.sq').count()
       assert.strictEqual(squares, 64, `example ${i} should have 64 squares`)
     }
   })
 
   test('the starting position has 32 pieces on it', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     assert.strictEqual(await game.locator('text.pc').count(), 32)
   })
 
   test('stepping forward plays the move and marks it', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     await game.locator('#first').click()
     await game.locator('#next').click()
 
@@ -104,14 +104,14 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('stepping back returns to the starting position', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     await game.locator('#prev').click()
     assert.strictEqual(await game.locator('.mv.on').count(), 0)
     assert.strictEqual(await game.locator('.ply').textContent(), '0 / 85')
   })
 
   test('the arrow keys step too', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     // Focus the host itself. Clicking it would land in the notation panel
     // and jump to whichever move happened to be under the pointer.
     await game.evaluate((el) => el.focus())
@@ -123,7 +123,7 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('clicking a move jumps to it and fires chess-move', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     const seen = page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -138,7 +138,7 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('the end of the game is the position after the last move', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     await game.locator('#last').click()
     assert.strictEqual(await game.locator('.ply').textContent(), '85 / 85')
     // The Fischer-Spassky ending, agreed drawn after 43. Re6: rook, king
@@ -147,7 +147,7 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('flipping swaps which corner a1 is in', async () => {
-    const game = page.locator('chess-game').first()
+    const game = page.locator('chess-view').first()
     const first = () => game.locator('text.co.file').first().textContent()
     assert.strictEqual(await first(), 'a')
     await game.locator('#flip').click()
@@ -157,12 +157,12 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('orientation="black" starts flipped', async () => {
-    const game = page.locator('chess-game').nth(1)
+    const game = page.locator('chess-view').nth(1)
     assert.strictEqual(await game.locator('text.co.file').first().textContent(), 'h')
   })
 
   test('a variation is navigable, and ⏮ leaves it', async () => {
-    const game = page.locator('chess-game').nth(1)
+    const game = page.locator('chess-view').nth(1)
     const inVariation = game.locator('.var .mv').first()
     await inVariation.click()
     assert.strictEqual(await game.locator('.mv.on').textContent(), 'd6')
@@ -177,14 +177,14 @@ describe('<chess-game> in a browser', { skip }, () => {
   })
 
   test('a move that is legal notation but not a legal move is flagged', async () => {
-    const game = page.locator('chess-game').last()
+    const game = page.locator('chess-view').last()
     assert.strictEqual(await game.locator('.mv.bad').textContent(), 'Qxh8')
     assert.match(await game.locator('.note.bad').textContent(), /not a legal move/)
   })
 
   test('changing the text content reloads the game', async () => {
     await page.evaluate(() => {
-      const el = document.createElement('chess-game')
+      const el = document.createElement('chess-view')
       el.id = 'made-in-js'
       el.textContent = '1. d4 d5 2. c4 *'
       document.body.append(el)
@@ -202,7 +202,7 @@ describe('<chess-game> in a browser', { skip }, () => {
 
   test('source that is not chess notation reports the syntax error', async () => {
     await page.evaluate(() => {
-      const el = document.createElement('chess-game')
+      const el = document.createElement('chess-view')
       el.id = 'nonsense'
       el.textContent = '1. e4 zz'
       document.body.append(el)
@@ -210,6 +210,124 @@ describe('<chess-game> in a browser', { skip }, () => {
     const note = page.locator('#nonsense .note.bad')
     await note.waitFor()
     assert.match(await note.textContent(), /unexpected/)
+  })
+
+  /* Commentary. The supplement asks presentation software to strip command
+   * markup before display; these check that it is stripped from the prose
+   * and shown as a chip instead, and that the panel mode does not put the
+   * same commentary on screen twice. */
+
+  test('command markup is stripped from the prose and shown as a chip', async () => {
+    const game = page.locator('chess-view').filter({ hasText: 'Rated Blitz' }).first()
+    await game.locator('.mv').first().waitFor()
+
+    const prose = await game.locator('.cm').allTextContents()
+    for (const text of prose) assert.doesNotMatch(text, /\[%/, 'command markup reached the display')
+    assert.deepStrictEqual(prose.map((t) => t.trim()).filter(Boolean), ['Book.'])
+
+    // clk and eval are shown; the rest of a comment's commands are not.
+    const chips = await game.locator('.cmd').allTextContents()
+    assert.ok(chips.includes('0:03:00'), `expected a clock chip, got ${JSON.stringify(chips)}`)
+    assert.ok(chips.includes('0.17'), 'expected an evaluation chip')
+  })
+
+  test('commentary="panel" moves the prose out of the move list', async () => {
+    const game = page.locator('chess-view[commentary="panel"]').first()
+    await game.locator('.mv').first().waitFor()
+
+    // Nothing inline any more...
+    assert.strictEqual(await game.locator('.cm').count(), 0)
+
+    // ...and the box follows the position.
+    const box = game.locator('.comment')
+    await game.locator('.mv', { hasText: 'd6' }).first().click()
+    assert.match(await box.textContent(), /Philidor's Defence/)
+    assert.match(await box.locator('.who').textContent(), /^2… d6$/)
+
+    await game.locator('#first').click()
+    assert.strictEqual(await box.textContent(), '')
+  })
+
+  test('the switches each take a part of the UI away', async () => {
+    const bare = page.locator('chess-view[notation="hidden"]').first()
+    await bare.locator('rect.sq').first().waitFor()
+
+    assert.strictEqual(await bare.locator('.side').count(), 1, 'still in the DOM')
+    assert.strictEqual(await bare.locator('.side').isVisible(), false, 'but not on screen')
+    assert.strictEqual(await bare.locator('.bar').isVisible(), false)
+    assert.strictEqual(await bare.locator('text.co').first().isVisible(), false)
+    // The board itself is untouched, and opened at the ply it was given.
+    assert.strictEqual(await bare.locator('rect.sq').count(), 64)
+    assert.strictEqual(await bare.locator('rect.hl.check').count(), 1, 'mate is on the board')
+  })
+
+  /* The source pane. */
+
+  test('source="edit" shows the notation and re-parses what you type', async () => {
+    const game = page.locator('chess-view[source="edit"]').first()
+    const editor = game.locator('textarea')
+    await editor.waitFor()
+
+    assert.match(await editor.inputValue(), /^1\. d4 d5 2\. c4/)
+    assert.strictEqual(await game.locator('.ply').textContent(), '0 / 6')
+
+    await editor.focus()
+    await editor.press('End')
+    await editor.press('ArrowLeft') // before the `*`
+    await editor.pressSequentially('4. cxd5 exd5 ')
+
+    // Playwright's locators pierce the shadow root; a raw querySelector in
+    // the page does not, so this has to go through shadowRoot itself.
+    await page.waitForFunction(
+      () =>
+        '0 / 8' ===
+        document
+          .querySelector('chess-view[source="edit"]')
+          ?.shadowRoot?.querySelector('.ply')?.textContent,
+      null,
+      { timeout: 5000 },
+    )
+    assert.match(await game.locator('.moves').textContent(), /cxd5/)
+  })
+
+  test('typing keeps the board rather than blanking it on every keystroke', async () => {
+    const game = page.locator('chess-view[source="edit"]').first()
+    const editor = game.locator('textarea')
+
+    const before = await game.locator('text.pc').count()
+    await editor.focus()
+    await editor.press('End')
+    await editor.pressSequentially(' 5. Nf')  // a half-typed move: not a game yet
+
+    await game.locator('.note.bad').waitFor()
+    assert.strictEqual(await game.locator('text.pc').count(), before, 'board survived')
+    assert.strictEqual(await game.locator('rect.sq').count(), 64)
+  })
+
+  test('editing fires chess-source, and f types an f rather than flipping', async () => {
+    const game = page.locator('chess-view[source="edit"]').first()
+    const editor = game.locator('textarea')
+
+    const corner = () => game.locator('text.co.file').first().textContent()
+    const was = await corner()
+
+    const seen = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          document.addEventListener(
+            'chess-source',
+            (e) => resolve({ ok: e.detail.ok, tail: e.detail.source.slice(-2) }),
+            { once: true },
+          )
+        }),
+    )
+    await editor.focus()
+    await editor.press('End')
+    await editor.pressSequentially('f')
+
+    const detail = await seen
+    assert.strictEqual(detail.tail.endsWith('f'), true, 'the f reached the source')
+    assert.strictEqual(await corner(), was, 'the board did not flip')
   })
 })
 
@@ -221,15 +339,15 @@ describe('<chess-game> in a browser', { skip }, () => {
  * the ESM build does, which is the half a bundler and a
  * <script type="module"> both take.
  */
-describe('<chess-game> as an ES module over http', { skip }, () => {
+describe('<chess-view> as an ES module over http', { skip }, () => {
   const DIST = path.join(__dirname, '..', 'dist')
   // The empty data: icon is not decoration. Without it the browser asks
   // for /favicon.ico of its own accord, which is a 404 in the console and
   // a third request in a test that counts them.
   const PAGE = `<!doctype html><meta charset="utf-8">
 <link rel="icon" href="data:,">
-<script type="module" src="./chess-game.mjs"></script>
-<chess-game>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-game>`
+<script type="module" src="./chess-view.mjs"></script>
+<chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>`
 
   const TYPES = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.html': 'text/html' }
 
@@ -264,7 +382,7 @@ describe('<chess-game> as an ES module over http', { skip }, () => {
       if ('error' === m.type()) errors.push(m.text())
     })
     await page.goto(origin + '/')
-    await page.waitForFunction(() => !!customElements.get('chess-game'))
+    await page.waitForFunction(() => !!customElements.get('chess-view'))
   })
 
   after(async () => {
@@ -275,8 +393,8 @@ describe('<chess-game> as an ES module over http', { skip }, () => {
   test('the module registers the element and draws a board', async () => {
 
     assert.deepStrictEqual(errors, [])
-    assert.strictEqual(await page.locator('chess-game rect.sq').count(), 64)
-    assert.strictEqual(await page.locator('chess-game text.pc').count(), 32)
+    assert.strictEqual(await page.locator('chess-view rect.sq').count(), 64)
+    assert.strictEqual(await page.locator('chess-view text.pc').count(), 32)
   })
 
   test('it is still self-contained: the page and the module, nothing else', async () => {
@@ -284,7 +402,7 @@ describe('<chess-game> as an ES module over http', { skip }, () => {
     const fetched = []
     page.on('request', (r) => fetched.push(r.url().replace(origin, '')))
     await page.reload()
-    await page.waitForFunction(() => !!customElements.get('chess-game'))
-    assert.deepStrictEqual(fetched, ['/', '/chess-game.mjs'])
+    await page.waitForFunction(() => !!customElements.get('chess-view'))
+    assert.deepStrictEqual(fetched, ['/', '/chess-view.mjs'])
   })
 })

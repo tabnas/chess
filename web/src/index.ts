@@ -1,13 +1,13 @@
 /* Copyright (c) 2026 Richard Rodger, MIT License */
 
-/* Bundle entry point: register <chess-game> and re-export the pieces, so
+/* Bundle entry point: register <chess-view> and re-export the pieces, so
  * the same file works as a drop-in <script> and as an ES module import.
  */
 
-import { ChessGameElement, define } from './element'
+import { ChessViewElement, define } from './element'
 import type { ChessMoveDetail } from './element'
 
-export { ChessGameElement, define }
+export { ChessViewElement, define }
 export type { ChessMoveDetail }
 export { boardSvg, boardText } from './board'
 export {
@@ -29,7 +29,7 @@ export type { Command, Comment, Game, Line, Move } from '@tabnas/chess'
 
 declare global {
   interface HTMLElementTagNameMap {
-    'chess-game': ChessGameElement
+    'chess-view': ChessViewElement
   }
 
   // The event bubbles, so a listener on `document` or `window` is as

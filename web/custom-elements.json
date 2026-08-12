@@ -4,13 +4,13 @@
   "modules": [
     {
       "kind": "javascript-module",
-      "path": "dist/chess-game.mjs",
+      "path": "dist/chess-view.mjs",
       "declarations": [
         {
           "kind": "class",
           "customElement": true,
-          "tagName": "chess-game",
-          "name": "ChessGameElement",
+          "tagName": "chess-view",
+          "name": "ChessViewElement",
           "description": "A chessboard view of a PGN game. The game is the element's text content, so the markup is the notation and nothing else.",
           "summary": "A 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
           "superclass": { "name": "HTMLElement" },
@@ -38,6 +38,42 @@
               "description": "'auto' follows prefers-color-scheme; 'dark' forces the dark palette.",
               "type": { "text": "'auto' | 'dark'" },
               "default": "'auto'"
+            },
+            {
+              "name": "source",
+              "description": "Show the notation itself: 'view' read-only, 'edit' to type into, re-parsing as you go.",
+              "type": { "text": "'hidden' | 'view' | 'edit'" },
+              "default": "'hidden'"
+            },
+            {
+              "name": "commentary",
+              "description": "Where the annotator's prose goes: 'inline' among the moves, 'panel' in a box of its own, or 'hidden'.",
+              "type": { "text": "'inline' | 'panel' | 'hidden'" },
+              "default": "'inline'"
+            },
+            {
+              "name": "controls",
+              "description": "Hide the navigation button bar with 'hidden'. Keyboard navigation still works.",
+              "type": { "text": "'visible' | 'hidden'" },
+              "default": "'visible'"
+            },
+            {
+              "name": "notation",
+              "description": "Hide the whole side panel with 'hidden', leaving just the board.",
+              "type": { "text": "'visible' | 'hidden'" },
+              "default": "'visible'"
+            },
+            {
+              "name": "tags",
+              "description": "Hide the players-and-event header with 'hidden'.",
+              "type": { "text": "'visible' | 'hidden'" },
+              "default": "'visible'"
+            },
+            {
+              "name": "coordinates",
+              "description": "Hide the file and rank labels around the board with 'hidden'.",
+              "type": { "text": "'visible' | 'hidden'" },
+              "default": "'visible'"
             }
           ],
           "members": [
@@ -63,9 +99,15 @@
               "return": { "type": { "text": "void" } }
             },
             {
+              "kind": "field",
+              "name": "source",
+              "description": "The notation being shown: the text content, or what the editor holds once it has been used. Settable.",
+              "type": { "text": "string" }
+            },
+            {
               "kind": "method",
               "name": "load",
-              "description": "Re-read the text content and rebuild. Called automatically on change.",
+              "description": "Re-read the source and rebuild. Called automatically on change.",
               "return": { "type": { "text": "void" } }
             }
           ],
@@ -74,6 +116,11 @@
               "name": "chess-move",
               "description": "Fired on every navigation, and bubbles. `detail` is `{ move, ply }`.",
               "type": { "text": "CustomEvent<ChessMoveDetail>" }
+            },
+            {
+              "name": "chess-source",
+              "description": "Fired when the source pane is edited, and bubbles. `detail` is `{ source, ok, error }`.",
+              "type": { "text": "CustomEvent<ChessSourceDetail>" }
             }
           ],
           "cssParts": [
@@ -81,7 +128,10 @@
             { "name": "board", "description": "The board and its coordinates." },
             { "name": "controls", "description": "The navigation button bar." },
             { "name": "notation", "description": "The side panel: tags, moves and status." },
-            { "name": "moves", "description": "The move list alone." }
+            { "name": "moves", "description": "The move list alone." },
+            { "name": "commentary", "description": "The commentary box, in panel mode." },
+            { "name": "source", "description": "The source pane." },
+            { "name": "editor", "description": "The textarea inside the source pane." }
           ],
           "cssProperties": [
             { "name": "--size", "description": "Board width.", "default": "24rem" },
@@ -111,18 +161,18 @@
       "exports": [
         {
           "kind": "custom-element-definition",
-          "name": "chess-game",
-          "declaration": { "name": "ChessGameElement", "module": "dist/chess-game.mjs" }
+          "name": "chess-view",
+          "declaration": { "name": "ChessViewElement", "module": "dist/chess-view.mjs" }
         },
         {
           "kind": "js",
-          "name": "ChessGameElement",
-          "declaration": { "name": "ChessGameElement", "module": "dist/chess-game.mjs" }
+          "name": "ChessViewElement",
+          "declaration": { "name": "ChessViewElement", "module": "dist/chess-view.mjs" }
         },
         {
           "kind": "js",
           "name": "define",
-          "declaration": { "name": "define", "module": "dist/chess-game.mjs" }
+          "declaration": { "name": "define", "module": "dist/chess-view.mjs" }
         }
       ]
     }

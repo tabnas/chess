@@ -135,10 +135,21 @@ this way, and how it compares with the alternatives.
 | 18 | Databases: many games in one source | ✅ |
 | 3 | Import format (lax) and export format (strict) | ✅ `strict` option |
 
-Plus one thing the standard does not define: the `[%clk 0:05:00]` /
+Plus one thing the 1994 standard does not define. The `[%clk 0:05:00]` /
 `[%eval …]` / `[%cal …]` markup that lichess, chess.com and ChessBase put
-inside comments is parsed into `Comment.commands` (and the comment text is
-still kept verbatim).
+inside comments is parsed into `Comment.commands`, with the comment text
+still kept verbatim. Its grammar comes from the
+[PGN Specification Supplement](https://www.ficsgames.org/pgnsupp.txt)
+(final draft, 2001), which defines the `[%name operand,operand]` syntax
+and four time commands — `clk`, `egt`, `emt`, `mct`. Everything else
+borrows the syntax without being in it, so this parses the syntax and
+interprets none of the names.
+
+The supplement's second kind of operand is the reason this needs a scanner
+rather than a regular expression: a double-quoted operand may contain the
+comma and the right bracket a bare one may not, so in
+`[%src "Lasker, 1896]"]` the command ends at the *last* bracket and holds
+one operand, not two.
 
 **Not included, deliberately:** move legality. Nothing here knows the rules
 of chess, so `1. Qh8` parses happily and `1. e9` does not — the first is a
@@ -149,18 +160,18 @@ null move and `(=)` draw offer some tools emit.
 
 ## A board to look at
 
-[`web/`](web/) is a self-contained `<chess-game>` web component built on
+[`web/`](web/) is a self-contained `<chess-view>` web component built on
 this parser: a classic 2D board, controls to step through the game, and the
 notation highlighted move by move.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-game@0.1.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.0"></script>
 
-<chess-game>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-game>
+<chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>
 ```
 
 One tag, no dependencies, no second request — or `npm install
-@tabnas/chess-game` for a bundler, types included.
+@tabnas/chess-view` for a bundler, types included.
 
 ![the component showing the Immortal Game](web/doc/screenshot.png)
 

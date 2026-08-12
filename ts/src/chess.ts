@@ -298,9 +298,19 @@ export interface Disambiguation {
   rank?: number
 }
 
-/** One `[%name arg,arg]` command inside a comment (a de facto extension). */
+/**
+ * One `[%name operand,operand]` command inside a comment.
+ *
+ * Not from the 1994 standard — from the *PGN Specification Supplement*
+ * (Cowderoy, Bulsink, Templeton, Bentzen, Feist and Zakharov; final draft
+ * 8 September 2001), which defines the syntax and four time commands:
+ * `clk`, `egt`, `emt` and `mct`. The `eval`, `csl` and `cal` commands seen
+ * in lichess and ChessBase exports use the same syntax without being part
+ * of it, so this parses the syntax and interprets none of the names.
+ */
 export interface Command {
   name: string
+  /** Operands in order. A quoted operand keeps its content, not its quotes. */
   args: string[]
 }
 
@@ -439,8 +449,9 @@ const RESULT = /^(?:(?:1-0|0-1|1\/2-1\/2)(?![A-Za-z0-9_+#=:/-])|\*)/
 // Tag name, PGN spec 8.1: letters, digits and underscore only.
 const TAG_NAME = /^[A-Za-z0-9_]+/
 
-// `[%name arg,arg]` markup inside a comment.
-const COMMAND = /\[%([A-Za-z_][A-Za-z0-9_]*)(?:[ \t]+([^\]]*))?\]/g
+// The opening of a `[%name …]` command inside a comment. Only the opening:
+// where it ENDS cannot be written as a regular expression — see scanCommands.
+const COMMAND_OPEN = /\[%([A-Za-z_][A-Za-z0-9_]*)/g
 
 const SUFFIX = /(?:!!|\?\?|!\?|\?!|!|\?)$/
 
@@ -458,9 +469,99 @@ export const ANNOTATION_NAG: Record<Annotation, number> = {
   '?!': 6,
 }
 
-/** Remove `[%name ...]` markup from a comment body and tidy the result. */
+/**
+ * Find every `[%name operand,operand]` command in a comment body.
+ *
+ * A scanner rather than a regular expression, because the supplement puts
+ * the terminator inside the operand grammar: an operand is either bare —
+ * any ASCII but a comma or a right bracket — or a double-quoted string,
+ * which may contain both. So in
+ *
+ *     [%src "Lasker, Common Sense in Chess (1896), p. 12]"]
+ *
+ * the command ends at the last bracket, and holds one operand, not two.
+ * `[^\]]*` would stop at the first bracket and split the citation at its
+ * comma; no regular expression can do better, because matching quotes is
+ * not something a regular language can express.
+ *
+ * Anything that does not close is not a command: it stays in `text` as the
+ * prose it is. The supplement is explicit that a reader which does not
+ * understand a command passes it through untouched, and the same courtesy
+ * is owed to something that only looks like one.
+ *
+ * Returns the commands and their spans in `text`, so that stripping them
+ * for display removes exactly what parsing them consumed.
+ */
+function scanCommands(text: string): { commands: Command[]; spans: [number, number][] } {
+  const commands: Command[] = []
+  const spans: [number, number][] = []
+
+  COMMAND_OPEN.lastIndex = 0
+  let open: RegExpExecArray | null
+  while (null != (open = COMMAND_OPEN.exec(text))) {
+    const start = open.index
+    let at = open.index + open[0].length
+    const args: string[] = []
+
+    // The name is terminated by the first space — or by the bracket, for a
+    // command with no operands at all.
+    if (' ' === text[at] || '\t' === text[at]) {
+      while (' ' === text[at] || '\t' === text[at]) at++
+
+      for (;;) {
+        if ('"' === text[at]) {
+          const close = text.indexOf('"', at + 1)
+          if (0 > close) break // unterminated: not a command
+          args.push(text.slice(at + 1, close))
+          at = close + 1
+          // Only a comma or the terminator may follow a quoted operand.
+          while (' ' === text[at] || '\t' === text[at]) at++
+        } else {
+          let end = at
+          while (end < text.length && ',' !== text[end] && ']' !== text[end]) end++
+          const bare = text.slice(at, end).trim()
+          // `a,,b` and a trailing comma contribute nothing, as before.
+          if ('' !== bare) args.push(bare)
+          at = end
+        }
+
+        if (',' === text[at]) {
+          at++
+          while (' ' === text[at] || '\t' === text[at]) at++
+          continue
+        }
+        break
+      }
+    }
+
+    if (']' !== text[at]) continue // never closed: leave it as prose
+    at++
+
+    commands.push({ name: open[1], args })
+    spans.push([start, at])
+    COMMAND_OPEN.lastIndex = at
+  }
+
+  return { commands, spans }
+}
+
+/**
+ * Remove `[%name ...]` markup from a comment body and tidy the result.
+ *
+ * The supplement asks presentation software to "strip out all commands
+ * before display in order to improve legibility" — without it, a lichess
+ * export reads `{ [%clk 0:03:00] }` where the annotator's prose should be.
+ */
 export function stripCommands(text: string): string {
-  return text.replace(COMMAND, ' ').replace(/[ \t]+/g, ' ').trim()
+  const { spans } = scanCommands(text)
+  let out = ''
+  let at = 0
+  for (const [start, end] of spans) {
+    out += text.slice(at, start) + ' '
+    at = end
+  }
+  out += text.slice(at)
+  return out.replace(/[ \t]+/g, ' ').trim()
 }
 
 /**
@@ -631,13 +732,7 @@ function annotate(rule: Rule, field: 'nags' | 'comments', value: any): void {
 function makeComment(kind: 'brace' | 'line', text: string, parse: boolean): Comment {
   const comment: Comment = { kind, text }
   if (parse) {
-    const commands: Command[] = []
-    COMMAND.lastIndex = 0
-    let m: RegExpExecArray | null
-    while (null != (m = COMMAND.exec(text))) {
-      const args = null == m[2] ? [] : m[2].split(',').map((s) => s.trim()).filter((s) => '' !== s)
-      commands.push({ name: m[1], args })
-    }
+    const { commands } = scanCommands(text)
     if (0 < commands.length) comment.commands = commands
   }
   return comment

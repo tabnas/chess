@@ -1,14 +1,14 @@
 {
-  "name": "@tabnas/chess-game",
+  "name": "@tabnas/chess-view",
   "version": "0.1.0",
-  "description": "A self-contained <chess-game> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
+  "description": "A self-contained <chess-view> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
   "type": "commonjs",
   "exports": {
     ".": {
-      "types": "./dist/chess-game.d.ts",
-      "import": "./dist/chess-game.mjs",
-      "require": "./dist/chess-game.cjs",
-      "default": "./dist/chess-game.mjs"
+      "types": "./dist/chess-view.d.ts",
+      "import": "./dist/chess-view.mjs",
+      "require": "./dist/chess-view.cjs",
+      "default": "./dist/chess-view.mjs"
     },
     "./engine": {
       "types": "./dist/engine.d.ts",
@@ -19,18 +19,18 @@
     "./dist/*": "./dist/*",
     "./package.json": "./package.json"
   },
-  "main": "./dist/chess-game.cjs",
-  "module": "./dist/chess-game.mjs",
-  "types": "./dist/chess-game.d.ts",
-  "unpkg": "./dist/chess-game.js",
-  "jsdelivr": "./dist/chess-game.js",
+  "main": "./dist/chess-view.cjs",
+  "module": "./dist/chess-view.mjs",
+  "types": "./dist/chess-view.d.ts",
+  "unpkg": "./dist/chess-view.js",
+  "jsdelivr": "./dist/chess-view.js",
   "customElements": "custom-elements.json",
   "sideEffects": [
     "./src/index.ts",
-    "./dist/chess-game.js",
-    "./dist/chess-game.mjs",
-    "./dist/chess-game.cjs",
-    "./dist/chess-game.dev.js"
+    "./dist/chess-view.js",
+    "./dist/chess-view.mjs",
+    "./dist/chess-view.cjs",
+    "./dist/chess-view.dev.js"
   ],
   "homepage": "https://github.com/tabnas/chess",
   "keywords": [

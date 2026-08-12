@@ -76,7 +76,7 @@ describe('package entry points', () => {
   test('require() loads the component and registers nothing', () => {
     const m = require(abs(pkg.main))
     assert.strictEqual(typeof m.define, 'function')
-    assert.strictEqual(typeof m.ChessGameElement, 'function')
+    assert.strictEqual(typeof m.ChessViewElement, 'function')
   })
 
   test('import() loads the component', async () => {
@@ -84,7 +84,7 @@ describe('package entry points', () => {
       import(pathToFileURL(abs(pkg.module)).href),
     )
     assert.strictEqual(typeof m.define, 'function')
-    assert.strictEqual(typeof m.ChessGameElement, 'function')
+    assert.strictEqual(typeof m.ChessViewElement, 'function')
   })
 
   test('the engine subpath loads without a DOM', async () => {
@@ -95,7 +95,7 @@ describe('package entry points', () => {
 })
 
 describe('declarations', () => {
-  const files = ['dist/chess-game.d.ts', 'dist/engine.d.ts']
+  const files = ['dist/chess-view.d.ts', 'dist/engine.d.ts']
 
   test('are shipped', () => {
     for (const f of files) assert.ok(fs.existsSync(abs(f)), `missing ${f}`)
@@ -113,9 +113,9 @@ describe('declarations', () => {
   })
 
   test('declare the element for editors', () => {
-    const text = fs.readFileSync(abs('dist/chess-game.d.ts'), 'utf8')
+    const text = fs.readFileSync(abs('dist/chess-view.d.ts'), 'utf8')
     assert.match(text, /interface HTMLElementTagNameMap/)
-    assert.match(text, /"chess-game": ChessGameElement/)
+    assert.match(text, /"chess-view": ChessViewElement/)
   })
 })
 
@@ -155,13 +155,13 @@ describe('the published tarball', () => {
     assert.ok(shipped.has('dist/sri.json'))
     const sri = JSON.parse(fs.readFileSync(abs('dist/sri.json'), 'utf8'))
     assert.strictEqual(sri.version, pkg.version)
-    for (const f of ['chess-game.js', 'chess-game.mjs']) {
+    for (const f of ['chess-view.js', 'chess-view.mjs']) {
       assert.match(sri.integrity[f], /^sha384-[A-Za-z0-9+/]{64}$/)
     }
   })
 })
 
-/* The manifest is what gives an editor autocomplete for <chess-game> and
+/* The manifest is what gives an editor autocomplete for <chess-view> and
  * its attributes, and a hand-written one drifts silently. Check it against
  * the source it describes. */
 describe('the custom elements manifest', () => {
@@ -170,15 +170,15 @@ describe('the custom elements manifest', () => {
   const source = (f) => fs.readFileSync(abs(path.join('src', f)), 'utf8')
 
   test('describes the element this package defines', () => {
-    assert.strictEqual(el.tagName, 'chess-game')
-    assert.strictEqual(el.name, 'ChessGameElement')
+    assert.strictEqual(el.tagName, 'chess-view')
+    assert.strictEqual(el.name, 'ChessViewElement')
     assert.ok(fs.existsSync(abs(manifest.modules[0].path)))
   })
 
   test('lists every observed attribute', () => {
-    const { ChessGameElement } = require(abs(pkg.main))
+    const { ChessViewElement } = require(abs(pkg.main))
     const listed = el.attributes.map((a) => a.name)
-    for (const name of ChessGameElement.observedAttributes) {
+    for (const name of ChessViewElement.observedAttributes) {
       assert.ok(listed.includes(name), `observed but undocumented: ${name}`)
     }
     // `theme` is read by the stylesheet rather than by JavaScript, so it
@@ -186,7 +186,7 @@ describe('the custom elements manifest', () => {
     for (const name of listed) {
       if ('theme' === name) continue
       assert.ok(
-        ChessGameElement.observedAttributes.includes(name),
+        ChessViewElement.observedAttributes.includes(name),
         `documented but not observed: ${name}`,
       )
     }

@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 Richard Rodger, MIT License */
 
-/* <chess-game> — a chessboard view of a PGN game.
+/* <chess-view> — a chessboard view of a PGN game.
  *
- *   <chess-game>1. e4 e5 2. Nf3 {solid} Nc6 1/2-1/2</chess-game>
+ *   <chess-view>1. e4 e5 2. Nf3 {solid} Nc6 1/2-1/2</chess-view>
  *
  * The game is the element's text content, so the markup is the notation
  * and nothing else. Everything is inside a shadow root, and the built
@@ -10,8 +10,9 @@
  * component.
  */
 
-import { parse } from '@tabnas/chess'
-import type { Game, Line, Move } from '@tabnas/chess'
+import { parse, stripCommands } from '@tabnas/chess'
+// `Comment` is also a DOM global; the alias keeps which one is meant plain.
+import type { Comment as PgnComment, Game, Line, Move } from '@tabnas/chess'
 
 import { boardSvg, boardText } from './board'
 import { applyMove, attacked, parseFen, resolve, startPosition } from './position'
@@ -41,12 +42,18 @@ interface Node {
 }
 
 interface Built {
+  game: Game
   start: Position
   nodes: Node[]
   mainline: Node[]
-  notation: string
   error?: string
 }
+
+/** How commentary is presented. */
+type Commentary = 'inline' | 'panel' | 'hidden'
+
+/** What the source pane does, if anything. */
+type Source = 'hidden' | 'view' | 'edit'
 
 /**
  * The `detail` of the `chess-move` event, fired on every navigation.
@@ -61,12 +68,68 @@ export interface ChessMoveDetail {
   ply: number
 }
 
+/**
+ * The `detail` of the `chess-source` event, fired when the source pane is
+ * edited. The element does not write edits back to its own text content —
+ * that would fight whatever put them there — so a host that wants to keep
+ * them listens for this.
+ */
+export interface ChessSourceDetail {
+  /** The notation as it now stands in the editor. */
+  source: string
+  /** Whether it parsed. Half-typed notation is the normal state here. */
+  ok: boolean
+  /** Why it did not parse, when it did not. */
+  error?: string
+}
+
 /* PGN spec 8.2.3.8 defines these six glyphs as exactly the traditional
  * suffix annotations, so showing the symbol is the standard's own
  * equivalence rather than an interpretation. Every other glyph stays `$n`:
  * section 10's list runs to 255 entries with no agreed symbols. */
 const NAG_SYMBOL: Record<number, string> = {
   1: '!', 2: '?', 3: '!!', 4: '??', 5: '!?', 6: '?!',
+}
+
+/* The supplement asks presentation software to "strip out all commands
+ * before display in order to improve legibility", and it is right: without
+ * that, a lichess export reads `[%clk 0:03:00]` where the annotator's
+ * prose should be. But four of them say something a reader actually wants,
+ * so they are shown as their own small chip instead of as markup. The rest
+ * are dropped from the display and left in the parsed data for whoever
+ * wants them — `csl` and `cal` are drawing instructions, and showing them
+ * as text would be worse than showing nothing. */
+const COMMAND_LABEL: Record<string, string> = {
+  clk: 'Clock',
+  emt: 'Move time',
+  egt: 'Game time',
+  mct: 'Mechanical clock',
+  eval: 'Evaluation',
+}
+
+function commandsHtml(comments?: PgnComment[]): string {
+  const out: string[] = []
+  for (const comment of comments || []) {
+    for (const command of comment.commands || []) {
+      const label = COMMAND_LABEL[command.name]
+      if (label) {
+        out.push(
+          `<span class="cmd" title="${label}">${esc(command.args.join(' '))}</span>`,
+        )
+      }
+    }
+  }
+  return out.join('')
+}
+
+/** Comment bodies with the command markup taken out, empties dropped. */
+function proseOf(comments?: PgnComment[]): string[] {
+  const out: string[] = []
+  for (const comment of comments || []) {
+    const text = stripCommands(comment.text)
+    if (text) out.push(text)
+  }
+  return out
 }
 
 const RESULT_WORD: Record<string, string> = {
@@ -142,17 +205,22 @@ function build(game: Game): Built {
   }
 
   const mainline = walk(game, start, 0)
-  return { start, nodes, mainline, notation: notationHtml(game, nodes), error }
+  return { game, start, nodes, mainline, error }
 }
 
-/** Notation markup: every move is a button that jumps to its position. */
-function notationHtml(game: Game, nodes: Node[]): string {
+/**
+ * Notation markup: every move is a button that jumps to its position.
+ *
+ * `prose` is false when commentary has a panel of its own, so that the
+ * same commentary is not on screen twice.
+ */
+function notationHtml(game: Game, nodes: Node[], prose: boolean): string {
   const byMove = new Map<Move, Node>()
   for (const node of nodes) byMove.set(node.move, node)
 
   const out: string[] = []
 
-  const annotate = (nags?: number[], comments?: { text: string }[]) => {
+  const annotate = (nags?: number[], comments?: PgnComment[]) => {
     for (const nag of nags || []) {
       const symbol = NAG_SYMBOL[nag]
       out.push(
@@ -161,9 +229,9 @@ function notationHtml(game: Game, nodes: Node[]): string {
           '</span>',
       )
     }
-    for (const comment of comments || []) {
-      const text = comment.text.trim()
-      if (text) out.push(`<span class="cm">${esc(text)}</span>`)
+    out.push(commandsHtml(comments))
+    if (prose) {
+      for (const text of proseOf(comments)) out.push(`<span class="cm">${esc(text)}</span>`)
     }
   }
 
@@ -228,7 +296,12 @@ const TEMPLATE = `
   <div class="side" part="notation">
     <div class="tags" id="tags"></div>
     <div class="moves" id="moves" part="moves" tabindex="0"></div>
+    <div class="comment" id="comment" part="commentary" role="note"></div>
     <div class="note" id="note" role="status"></div>
+  </div>
+  <div class="srcpane" part="source">
+    <textarea id="src" part="editor" spellcheck="false" autocapitalize="off"
+      autocorrect="off" aria-label="Chess notation source"></textarea>
   </div>
 </div>`
 
@@ -243,8 +316,11 @@ const Base: typeof HTMLElement =
     ? (class {} as unknown as typeof HTMLElement)
     : HTMLElement
 
-export class ChessGameElement extends Base {
-  static observedAttributes = ['orientation', 'game', 'ply']
+export class ChessViewElement extends Base {
+  static observedAttributes = [
+    'orientation', 'game', 'ply',
+    'source', 'commentary', 'controls', 'notation', 'tags', 'coordinates',
+  ]
 
   #root: ShadowRoot
   #built?: Built
@@ -252,6 +328,10 @@ export class ChessGameElement extends Base {
   #flipped = false
   #observer?: MutationObserver
   #wired = false
+  /** Edited notation, when the editor holds something the light DOM does not. */
+  #source?: string
+  /** True while a keystroke in the editor is being applied. */
+  #editing = false
 
   constructor() {
     super()
@@ -266,7 +346,13 @@ export class ChessGameElement extends Base {
     }
     // The notation is the element's content, so it has to be watched:
     // frameworks and template engines fill it in after upgrade.
-    this.#observer = new MutationObserver(() => this.load())
+    this.#observer = new MutationObserver(() => {
+      // New text content is a new game, and supersedes whatever the
+      // editor is holding. The element never writes to its own light DOM,
+      // so this only ever fires for a change from outside.
+      this.#source = undefined
+      this.load()
+    })
     this.#observer.observe(this, { childList: true, characterData: true, subtree: true })
     this.load()
   }
@@ -281,9 +367,30 @@ export class ChessGameElement extends Base {
     if ('orientation' === name) {
       this.#flipped = 'black' === this.getAttribute('orientation')
       this.#draw()
-    } else {
+    } else if ('game' === name || 'ply' === name) {
       this.load()
+    } else {
+      // The rest change how the same game is presented, not which game it
+      // is. Re-render, but do not re-parse and lose the reader's place.
+      this.#render()
+      this.#draw()
     }
+  }
+
+  /**
+   * The notation this view is showing: its own text content, unless the
+   * editor has been used, in which case what the editor holds.
+   *
+   * Setting it overrides the text content until the text content next
+   * changes. Assigning `undefined` gives the text content back.
+   */
+  get source(): string {
+    return this.#source ?? this.textContent ?? ''
+  }
+
+  set source(text: string | undefined) {
+    this.#source = text
+    this.load()
   }
 
   /** The move currently shown, or `undefined` at the starting position. */
@@ -302,28 +409,49 @@ export class ChessGameElement extends Base {
     this.#go(0 < n ? line[n - 1] : undefined)
   }
 
-  /** Re-read the text content and rebuild. Called automatically. */
+  /** Re-read the source and rebuild. Called automatically. */
   load() {
     const el = (id: string) => this.#root.getElementById(id) as HTMLElement
     const note = el('note')
     const moves = el('moves')
     const tags = el('tags')
+    const source = this.source
 
     this.#flipped = 'black' === this.getAttribute('orientation')
-    this.#node = undefined
+    this.#syncEditor(source)
 
-    const fail = (message: string, bad: boolean) => {
-      this.#built = undefined
-      tags.textContent = ''
-      moves.textContent = ''
+    const emit = (ok: boolean, error?: string) => {
+      if (!this.#editing) return
+      const detail: ChessSourceDetail = { source, ok, error }
+      this.dispatchEvent(
+        new CustomEvent<ChessSourceDetail>('chess-source', { detail, bubbles: true }),
+      )
+    }
+
+    const say = (message: string, bad: boolean) => {
       note.className = bad ? 'note bad' : 'note'
       note.textContent = message
-      this.#draw()
+    }
+
+    const fail = (message: string, bad: boolean) => {
+      // Mid-edit, notation that does not parse is the normal state between
+      // one valid game and the next — blanking the board on every
+      // keystroke would make the editor unusable. Keep the last good
+      // position on screen and say what is wrong.
+      if (!this.#editing) {
+        this.#built = undefined
+        this.#node = undefined
+        tags.textContent = ''
+        moves.textContent = ''
+        this.#draw()
+      }
+      say(message, bad)
+      emit(false, message)
     }
 
     let games: Game[]
     try {
-      games = parse(this.textContent || '')
+      games = parse(source)
     } catch (err) {
       // A syntax error: the source is not chess notation. The engine's
       // message already names the row, column and offending characters.
@@ -334,22 +462,61 @@ export class ChessGameElement extends Base {
     const game = games[which] || games[0]
     if (null == game) return fail('No game.', false)
 
+    // Keep the reader's place across an edit: the position they were
+    // looking at is almost always still there a keystroke later.
+    const was = this.#editing ? this.ply : 0
+
+    this.#node = undefined
     this.#built = build(game)
 
     tags.innerHTML = tagsHtml(game, games.length, which)
-    moves.innerHTML = this.#built.notation
+    this.#render()
+    say(this.#built.error || '', null != this.#built.error)
+    emit(true, this.#built.error)
+
+    const ply = this.getAttribute('ply')
+    if (this.#editing) this.goto(Math.min(was, this.#built.mainline.length))
+    else if (null != ply) this.goto(Number(ply))
+    else this.#draw()
+  }
+
+  /** Re-render the notation from the current build, without re-parsing. */
+  #render() {
+    const moves = this.#root.getElementById('moves') as HTMLElement
+    if (null == this.#built) {
+      moves.textContent = ''
+      return
+    }
+
+    moves.innerHTML = notationHtml(
+      this.#built.game,
+      this.#built.nodes,
+      'panel' !== this.#commentary(),
+    )
     for (const button of Array.from(moves.querySelectorAll('button[data-node]'))) {
       button.addEventListener('click', () => {
         this.#go(this.#built?.nodes[Number((button as HTMLElement).dataset.node)])
       })
     }
+  }
 
-    note.className = this.#built.error ? 'note bad' : 'note'
-    note.textContent = this.#built.error || ''
+  #commentary(): Commentary {
+    const value = this.getAttribute('commentary')
+    return 'panel' === value || 'hidden' === value ? value : 'inline'
+  }
 
-    const ply = this.getAttribute('ply')
-    if (null != ply) this.goto(Number(ply))
-    else this.#draw()
+  #sourceMode(): Source {
+    const value = this.getAttribute('source')
+    return 'view' === value || 'edit' === value ? value : 'hidden'
+  }
+
+  /** Put `text` in the editor — unless the editor is where it came from. */
+  #syncEditor(text: string) {
+    const editor = this.#root.getElementById('src') as HTMLTextAreaElement | null
+    if (null == editor) return
+    editor.readOnly = 'edit' !== this.#sourceMode()
+    // Writing the value back mid-keystroke would move the caret to the end.
+    if (!this.#editing && editor.value !== text) editor.value = text
   }
 
   #wire() {
@@ -371,8 +538,28 @@ export class ChessGameElement extends Base {
     on('last', last)
     on('flip', flip)
 
+    const editor = this.#root.getElementById('src') as HTMLTextAreaElement
+    editor.addEventListener('input', () => {
+      // #editing is what tells load() that a half-typed game is expected,
+      // that the caret must not be disturbed, and that the reader's place
+      // is worth keeping.
+      this.#editing = true
+      this.#source = editor.value
+      try {
+        this.load()
+      } finally {
+        this.#editing = false
+      }
+    })
+
     if (!this.hasAttribute('tabindex')) this.tabIndex = 0
     this.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Typing in the editor is typing, not navigating: `f` has to insert
+      // an f, and the arrow keys have to move the caret. The event is
+      // retargeted to the host on its way out of the shadow root, so the
+      // composed path is what says where it started.
+      if (e.composedPath().includes(editor)) return
+
       const keys: Record<string, () => void> = {
         ArrowLeft: () => this.#step(-1),
         ArrowRight: () => this.#step(1),
@@ -394,6 +581,38 @@ export class ChessGameElement extends Base {
     const at = this.#node ? this.#node.at + delta : 0 < delta ? 0 : -1
     if (at >= line.length) return
     this.#go(0 > at ? undefined : line[at])
+  }
+
+  /**
+   * Fill the commentary panel for the position on screen.
+   *
+   * At the start of a line the commentary is the line's own — a comment
+   * before the first move annotates the position it starts from, not the
+   * move that follows it.
+   */
+  #comment() {
+    const box = this.#root.getElementById('comment') as HTMLElement
+    if ('panel' !== this.#commentary()) {
+      box.textContent = ''
+      return
+    }
+
+    const comments = this.#node ? this.#node.move.comments : this.#built?.game.comments
+    const label = this.#node
+      ? `${this.#node.move.number}${'w' === this.#node.move.side ? '.' : '…'} ${this.#node.move.san}`
+      : ''
+
+    const prose = proseOf(comments)
+    const commands = commandsHtml(comments)
+    if (0 === prose.length && '' === commands) {
+      box.innerHTML = ''
+      return
+    }
+
+    box.innerHTML =
+      (label ? `<span class="who">${esc(label)}</span>` : '') +
+      commands +
+      prose.map((text) => `<p>${esc(text)}</p>`).join('')
   }
 
   #go(node: Node | undefined) {
@@ -430,6 +649,8 @@ export class ChessGameElement extends Base {
 
     const line = this.#node?.line || this.#built?.mainline || []
     ply.textContent = `${this.ply} / ${line.length}`
+
+    this.#comment()
 
     for (const el of Array.from(this.#root.querySelectorAll('.mv.on'))) {
       el.classList.remove('on')
@@ -472,6 +693,6 @@ function tagsHtml(game: Game, total: number, which: number): string {
 }
 
 /** Register the element. Called automatically by the bundled build. */
-export function define(name = 'chess-game') {
-  if (!customElements.get(name)) customElements.define(name, ChessGameElement)
+export function define(name = 'chess-view') {
+  if (!customElements.get(name)) customElements.define(name, ChessViewElement)
 }

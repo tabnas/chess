@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-/* Package <chess-game> for a CDN, an npm install, or a static upload.
+/* Package <chess-view> for a CDN, an npm install, or a static upload.
  *
  * The output is SELF-CONTAINED: @tabnas/chess and the @tabnas/parser
  * engine underneath it are bundled in, the styles are a string in the
@@ -13,10 +13,10 @@
  * overlap, and a package that guesses wrong is a package that will not
  * load at all:
  *
- *   chess-game.js       IIFE, minified — <script src>, registers the element
- *   chess-game.mjs      ESM, minified  — `import`, and bundlers
- *   chess-game.cjs      CJS, minified  — `require`
- *   chess-game.dev.js   IIFE, readable, sourcemapped — for debugging
+ *   chess-view.js       IIFE, minified — <script src>, registers the element
+ *   chess-view.mjs      ESM, minified  — `import`, and bundlers
+ *   chess-view.cjs      CJS, minified  — `require`
+ *   chess-view.dev.js   IIFE, readable, sourcemapped — for debugging
  *   engine.cjs/.mjs     the replay half, for use with no DOM
  *
  * The extensions are load-bearing. Node decides a file's module format
@@ -76,28 +76,28 @@ const BUILDS = [
   },
   {
     ...common,
-    outfile: path.join(OUT, 'chess-game.js'),
+    outfile: path.join(OUT, 'chess-view.js'),
     format: 'iife',
-    globalName: 'ChessGame',
+    globalName: 'ChessView',
     minify: true,
   },
   {
     ...common,
-    outfile: path.join(OUT, 'chess-game.mjs'),
+    outfile: path.join(OUT, 'chess-view.mjs'),
     format: 'esm',
     minify: true,
   },
   {
     ...common,
-    outfile: path.join(OUT, 'chess-game.cjs'),
+    outfile: path.join(OUT, 'chess-view.cjs'),
     format: 'cjs',
     minify: true,
   },
   {
     ...common,
-    outfile: path.join(OUT, 'chess-game.dev.js'),
+    outfile: path.join(OUT, 'chess-view.dev.js'),
     format: 'iife',
-    globalName: 'ChessGame',
+    globalName: 'ChessView',
     minify: false,
     sourcemap: true,
     dev: true,
@@ -121,7 +121,7 @@ function declarations() {
   const entries = [
     // The element's entry carries the global augmentation, so its own
     // `declare global` has to survive the bundling.
-    { filePath: ENTRY, outfile: 'chess-game.d.ts', globals: true },
+    { filePath: ENTRY, outfile: 'chess-view.d.ts', globals: true },
     { filePath: ENGINE, outfile: 'engine.d.ts', globals: false },
   ]
 
@@ -157,7 +157,7 @@ function declarations() {
 /* Subresource Integrity hashes for the files a CDN will serve. A pinned
  * URL says which version you got; the hash says nothing changed on the
  * way. Written into dist/ so they ship with the release they describe:
- * the hashes for 1.2.3 are at .../@tabnas/chess-game@1.2.3/dist/sri.json.
+ * the hashes for 1.2.3 are at .../@tabnas/chess-view@1.2.3/dist/sri.json.
  */
 function integrity(files) {
   const sri = {}
@@ -229,17 +229,17 @@ async function main() {
   declarations()
 
   // The demo doubles as the smoke test that the built file really is
-  // self-contained: it loads chess-game.js and nothing else. It lives at
+  // self-contained: it loads chess-view.js and nothing else. It lives at
   // the repo root so it works straight from a checkout, and is copied
   // into dist/ with the script path rewritten so the built folder is a
   // complete, uploadable site on its own.
   const demo = fs.readFileSync(path.join(ROOT, 'demo.html'), 'utf8')
   fs.writeFileSync(
     path.join(OUT, 'index.html'),
-    demo.replace('./dist/chess-game.js', './chess-game.js'),
+    demo.replace('./dist/chess-view.js', './chess-view.js'),
   )
 
-  report(integrity(['chess-game.js', 'chess-game.mjs', 'chess-game.dev.js']))
+  report(integrity(['chess-view.js', 'chess-view.mjs', 'chess-view.dev.js']))
 }
 
 main().catch((err) => {
