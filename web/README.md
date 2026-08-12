@@ -101,6 +101,31 @@ manifest](https://github.com/webcomponents/custom-elements-manifest) — is
 published too, so editors that read it complete the tag, its attributes,
 its CSS parts and its custom properties in plain HTML and CSS as well.
 
+### Before it upgrades
+
+The game is the element's text content, which means that until the
+component is defined, the browser shows it: a line of PGN where the board
+is going to be.
+
+A classic `<script src>` in `<head>` blocks parsing, so the element is
+defined before the board is even in the document and there is nothing to
+see. A module script and a `defer`red one both run *after* the document
+parses, so on those the raw notation is briefly on screen — measured on a
+slow connection at a 17px line of text, jumping to a 453px board when the
+bundle lands. One rule covers both the flash and most of the jump:
+
+```css
+chess-game:not(:defined) {
+  display: block;
+  visibility: hidden;
+  min-height: var(--size, 24rem);
+}
+```
+
+That hides the notation until the element exists and reserves the board's
+height for it, which takes the shift from 436px to 69px — the controls
+bar, which sits below the board and is not worth guessing the height of.
+
 ## Use
 
 ### Attributes
