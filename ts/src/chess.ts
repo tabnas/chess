@@ -263,7 +263,7 @@ const grammarText = `
 }`
 // --- END EMBEDDED chess-grammar.jsonic ---
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.1.1'
 
 // --- The parse model -----------------------------------------------------
 
@@ -409,17 +409,17 @@ function sanPattern(strict: boolean): RegExp {
   const annotation = strict ? '' : '(?<annotation>!!|\\?\\?|!\\?|\\?!|!|\\?)?'
   return new RegExp(
     '^(?:' +
-      `(?<castle>${castle})` +
-      // Piece move: letter, optional disambiguation, optional capture, target.
-      `|(?<piece>${piece})(?<dfile>[a-h])?(?<drank>[1-8])?(?<pcapture>x)?` +
-      '(?<pto>[a-h][1-8])' +
-      // Pawn move: origin file, optional capture, target rank, promotion.
-      '|(?<pfile>[a-h])(?:x(?<pxfile>[a-h]))?(?<prank>[1-8])' +
-      `(?:${promote}(?<promotion>[QRBN]))?` +
-      ')' +
-      `(?<check>${check})?` +
-      annotation +
-      SYMBOL_TAIL,
+    `(?<castle>${castle})` +
+    // Piece move: letter, optional disambiguation, optional capture, target.
+    `|(?<piece>${piece})(?<dfile>[a-h])?(?<drank>[1-8])?(?<pcapture>x)?` +
+    '(?<pto>[a-h][1-8])' +
+    // Pawn move: origin file, optional capture, target rank, promotion.
+    '|(?<pfile>[a-h])(?:x(?<pxfile>[a-h]))?(?<prank>[1-8])' +
+    `(?:${promote}(?<promotion>[QRBN]))?` +
+    ')' +
+    `(?<check>${check})?` +
+    annotation +
+    SYMBOL_TAIL,
   )
 }
 
@@ -508,7 +508,7 @@ function scanCommands(text: string): { commands: Command[]; spans: [number, numb
     if (' ' === text[at] || '\t' === text[at]) {
       while (' ' === text[at] || '\t' === text[at]) at++
 
-      for (;;) {
+      for (; ;) {
         if ('"' === text[at]) {
           const close = text.indexOf('"', at + 1)
           if (0 > close) break // unterminated: not a command
@@ -726,7 +726,7 @@ function lineOf(rule: Rule): Line {
 function annotate(rule: Rule, field: 'nags' | 'comments', value: any): void {
   const line = lineOf(rule)
   const target: any = 0 < line.moves.length ? line.moves[line.moves.length - 1] : line
-  ;(target[field] = target[field] || []).push(value)
+    ; (target[field] = target[field] || []).push(value)
 }
 
 function makeComment(kind: 'brace' | 'line', text: string, parse: boolean): Comment {
@@ -774,11 +774,11 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
     },
 
     '@result-open': (r: Rule) => {
-      ;(r.node as Game).result = r.o0.src as GameResult
+      ; (r.node as Game).result = r.o0.src as GameResult
     },
 
     '@result-close': (r: Rule) => {
-      ;(r.node as Game).result = r.c0.src as GameResult
+      ; (r.node as Game).result = r.c0.src as GameResult
     },
 
     // A `[` after the movetext has started belongs to the next game, not
@@ -857,7 +857,7 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       // A variation replaces the move it follows; one that follows no move
       // annotates the line's starting position instead.
       const target: { variations?: Line[] } = line.moves[line.moves.length - 1] || line
-      ;(target.variations = target.variations || []).push(r.child.node as Line)
+        ; (target.variations = target.variations || []).push(r.child.node as Line)
     },
   } as Record<FuncRef, Function>
 }
