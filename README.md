@@ -7,6 +7,13 @@
 [![tabnas standard](https://tabnas.github.io/status/badges/chess-standard.svg)](https://tabnas.github.io/status/)
 <!-- /tabnas-badges -->
 
+### 👉 [See it working — tabnas.github.io/chess](https://tabnas.github.io/chess/)
+
+A live board you can step through, edit and take apart, with every option
+demonstrated. It is the fastest way to see what this is.
+
+---
+
 A grammar plugin that teaches the [Tabnas](https://github.com/tabnas/parser)
 parser to read **chess notation**: [PGN](https://www.chessprogramming.org/Portable_Game_Notation)
 games and the [SAN](https://en.wikipedia.org/wiki/Algebraic_notation_(chess))
