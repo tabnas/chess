@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>&lt;chess-game&gt;</title>
+
+<!-- The whole component. One file, no other requests: @tabnas/chess and
+     the @tabnas/parser engine are bundled in, the board is inline SVG. -->
+<script src="./dist/chess-game.js"></script>
+
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2rem 1rem 6rem;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 0.5rem; }
+  p { color: #666; max-width: 42rem; }
+  @media (prefers-color-scheme: dark) { p { color: #999; } }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+  pre {
+    background: #8881; padding: 0.75rem 1rem; border-radius: 6px;
+    overflow-x: auto;
+  }
+  chess-game { margin: 0.75rem 0; }
+</style>
+</head>
+<body>
+
+<h1>&lt;chess-game&gt;</h1>
+<p>
+  A chessboard view of a PGN game. The notation is the element's text
+  content — there is no other markup and no configuration.
+</p>
+
+<pre>&lt;script src="chess-game.js"&gt;&lt;/script&gt;
+
+&lt;chess-game&gt;1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2&lt;/chess-game&gt;</pre>
+
+<h2>A whole game</h2>
+<p>Use the buttons, the arrow keys, or click any move in the notation.</p>
+
+<chess-game>
+[Event "F/S Return Match"]
+[Site "Belgrade, Serbia JUG"]
+[Date "1992.11.04"]
+[White "Fischer, Robert J."]
+[Black "Spassky, Boris V."]
+[Result "1/2-1/2"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3
+O-O 9. h3 Nb8 10. d4 Nbd7 11. c4 c6 12. cxb5 axb5 13. Nc3 Bb7 14. Bg5 b4 15.
+Nb1 h6 16. Bh4 c5 17. dxe5 Nxe4 18. Bxe7 Qxe7 19. exd6 Qf6 20. Nbd2 Nxd6 21.
+Nc4 Nxc4 22. Bxc4 Nb6 23. Ne5 Rae8 24. Bxf7+ Rxf7 25. Nxf7 Rxe1+ 26. Qxe1 Kxf7
+27. Qe3 Qg5 28. Qxg5 hxg5 29. b3 Ke6 30. a3 Kd6 31. axb4 cxb4 32. Ra5 Nd5 33.
+f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
+40. Rd6 Kc5 41. Ra6 Nf2 42. g4 Bd3 43. Re6 1/2-1/2
+</chess-game>
+
+<h2>Annotations</h2>
+<p>
+  Comments, glyphs and variations all show in the notation. Clicking a move
+  inside a variation follows that variation — the arrow keys then walk it
+  rather than the mainline.
+</p>
+
+<chess-game orientation="black">
+[Event "Immortal Game"]
+[White "Anderssen, Adolf"]
+[Black "Kieseritzky, Lionel"]
+[Date "1851.06.21"]
+[Result "1-0"]
+
+1. e4 e5 2. f4 {The King's Gambit: sharp, and out of fashion for a century.}
+exf4 3. Bc4 Qh4+ 4. Kf1 b5 $6 {The Bryan Counter-gambit.} (4... d6 {is the
+modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
+10. g4 Nf6 11. Rg1 $1 {A rook offered, and the attack begins.} cxb5 12. h4 Qg6
+13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 $3 Qxb2 18. Bd6 $3 Bxg1
+19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ $1 Nxf6 23. Be7# 1-0
+</chess-game>
+
+<h2>A study, from a set position</h2>
+<p>
+  A <code>FEN</code> tag says where play starts, so the move numbers and
+  the side to move come from the game rather than from move one.
+</p>
+
+<chess-game theme="dark">
+[SetUp "1"]
+[FEN "8/6P1/8/8/8/1k6/8/K7 w - - 0 51"]
+
+51. g8=Q+ {The pawn queens with check along the long diagonal.} Kb4
+52. Qb8+ Ka4 53. Qb2 {The queen cuts the king off; the white king walks up.} 1-0
+</chess-game>
+
+<h2>Bare movetext</h2>
+<p>No tag pairs, no result marker. Import format is lax and so is this.</p>
+
+<chess-game>1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 O-O 5.Bd3 d5 6.Nf3 c5</chess-game>
+
+<h2>When the notation is not a game</h2>
+<p>
+  The parser accepts any well-formed SAN move; whether it is <em>playable</em>
+  is a different question, and one only a board can answer. A move that is
+  legal notation but not a legal move stops the line and says so.
+</p>
+
+<chess-game>1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-game>
+
+<script>
+  // The component reports each move it shows.
+  document.addEventListener('chess-move', (e) => {
+    if (e.detail.move) {
+      console.log(`ply ${e.detail.ply}:`, e.detail.move.san, e.detail.move)
+    }
+  })
+</script>
+
+</body>
+</html>

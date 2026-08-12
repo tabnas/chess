@@ -1,67 +1,69 @@
-# @tabnas/zon
+# @tabnas/chess
 
 A [Tabnas](https://github.com/tabnas/parser) grammar plugin that parses
-[Zig Object Notation (ZON)](https://ziglang.org/documentation/master/#ZON)
-text into objects, arrays, and scalar values. ZON is the anonymous-struct
-data format used for Zig `build.zig.zon` manifests.
+**chess notation**: PGN games and the SAN moves inside them.
+
+The repository hub, with the scope table and the grammar diagram, is
+[`../README.md`](../README.md). This file is the package's own entry point.
 
 ## Install
 
 ```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
+npm install @tabnas/parser @tabnas/chess
 ```
 
-Requires `@tabnas/parser` >= 2 and `@tabnas/jsonic` >= 2 as peer
-dependencies.
+`@tabnas/parser` is a peer dependency. No other grammar is needed
+underneath — this plugin installs on a bare engine.
 
-## One example
-
-The plugin layers onto a Tabnas engine that already has the jsonic
-grammar:
+## Use
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { Chess } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas().use(Chess)
+const game = tn.parse('[White "Fischer"]\n\n1. e4 e5 2. Nf3 {solid} 1-0')[0]
 
-j.parse('.{ .name = "Alice", .age = 30 }') // => { name: 'Alice', age: 30 }
-j.parse('.{ 1, 2, 3 }')                     // => [1, 2, 3]
+game.tags.White                // => 'Fischer'
+game.result                    // => '1-0'
+game.moves[2].san              // => 'Nf3'
+game.moves[2].comments[0].text // => 'solid'
 ```
 
-Build the instance once and reuse it — constructing the grammar is the
-expensive part.
+Or, without touching the engine:
+
+```js
+const { parse, parseGame, parseSan } = require('@tabnas/chess')
+
+parse('1. e4 1-0\n\n1. d4 0-1').length // => 2
+parseGame('1. e4 e5 *').moves.length   // => 2
+parseSan('O-O-O').castle               // => 'queen'
+```
 
 ## Documentation
 
-Full documentation follows the [Diátaxis](https://diataxis.fr)
-framework:
+Four-quadrant [Diátaxis](https://diataxis.fr) docs:
 
-- [Tutorial](doc/tutorial.md) — a guided first parse, start to finish.
-- [How-to guide](doc/guide.md) — short recipes for individual tasks.
-- [Reference](doc/reference.md) — the public API, every option, and the
-  complete ZON syntax accepted.
-- [Concepts](doc/concepts.md) — how the plugin reshapes the engine, and
-  why.
+- [tutorial.md](doc/tutorial.md) — learning-oriented: zero to a working
+  parser, step by step.
+- [guide.md](doc/guide.md) — task-oriented recipes for real problems.
+- [reference.md](doc/reference.md) — the exact API surface, options and
+  notation accepted.
+- [concepts.md](doc/concepts.md) — the data model, the grammar, and why both
+  look the way they do.
 
-For the Go port, see [`../go/README.md`](../go/README.md).
+## Build and test
 
-## Grammar diagram
+```bash
+npm install
+npm run build          # embed-grammar.js, then tsc --build src test
+npm test               # node --test dist-test/*.test.js
+```
 
-The grammar is defined in the top-level
-[`zon-grammar.jsonic`](../zon-grammar.jsonic) and embedded into this
-implementation (and the Go port) by [`embed-grammar.js`](embed-grammar.js)
-during the build.
-
-The installed grammar as a railroad/syntax diagram, generated with
-[`@tabnas/railroad`](https://github.com/tabnas/railroad):
-
-![zon grammar railroad diagram](doc/grammar.svg)
-
-A vertical ASCII version is in [`doc/grammar.txt`](doc/grammar.txt).
+`npm run build` embeds [`../chess-grammar.jsonic`](../chess-grammar.jsonic)
+into `src/chess.ts` first. Never hand-edit between the `BEGIN/END EMBEDDED`
+markers — edit the grammar and re-run `npm run embed`.
 
 ## License
 
-Copyright (c) 2025 Richard Rodger and other contributors,
-[MIT License](LICENSE).
+MIT. Copyright (c) Richard Rodger.

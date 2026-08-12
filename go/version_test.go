@@ -1,44 +1,50 @@
-/* Copyright (c) 2026 Richard Rodger, MIT License */
+/* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 
-// The baked-in VERSION must equal the package's declared version.
+// The Go `const VERSION` must equal ts/package.json "version".
 //
-// This is the CI check for version drift. It exists because the constant HAS
-// drifted in practice: jsonic-cli shipped 0.4.1 and 0.4.2 while its const sat
-// at 0.4.0 (the release orchestrator's file discovery missed it), and
-// @tabnas/json shipped a TS `Version` export reading 1.0.0 for several
-// releases because nothing ever rewrote it. Both were invisible until someone
-// read the file. A release that bumps package.json and forgets the constant
-// now fails here instead of shipping a lie.
+// ts/test/version.test.ts checks the TypeScript export against the SAME
+// file, so the two runtimes cannot drift apart either. There is no skip
+// path: an unreadable package.json FAILS here, because a version check
+// that silently does not run is the exact failure mode it exists to
+// prevent.
 
-package tabnaszon
+package tabnaschess
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
 func TestVersionMatchesPackageJSON(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "ts", "package.json"))
-	if err != nil {
-		// Deliberately fatal, never skipped: a version check that silently
-		// does not run is the failure mode this test exists to prevent.
-		t.Fatalf("cannot read ts/package.json, so VERSION cannot be checked: %v", err)
+	path := filepath.Join("..", "ts", "package.json")
+	raw, err := os.ReadFile(path)
+	if nil != err {
+		t.Fatalf("cannot read %s, so VERSION cannot be checked: %v", path, err)
 	}
+
 	var pkg struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
 	}
-	if err := json.Unmarshal(raw, &pkg); err != nil {
-		t.Fatalf("ts/package.json is not readable JSON: %v", err)
+	if err := json.Unmarshal(raw, &pkg); nil != err {
+		t.Fatalf("cannot parse %s: %v", path, err)
 	}
-	if pkg.Version == "" {
-		t.Fatal("ts/package.json has no version field")
+	if "" == pkg.Version {
+		t.Fatalf("%s has no version field, so VERSION cannot be checked", path)
 	}
+
 	if VERSION != pkg.Version {
-		t.Errorf("VERSION drift: go VERSION = %q but %s package.json = %q.\n"+
-			"Both are rewritten by admin/publish.sh at release; if you bumped one by "+
-			"hand, bump the other.", VERSION, pkg.Name, pkg.Version)
+		t.Fatalf("VERSION drift: %s exports %s but package.json is %s. "+
+			"Both are rewritten at release; if you bumped one by hand, bump the other.",
+			pkg.Name, VERSION, pkg.Version)
+	}
+}
+
+func TestVersionIsSemver(t *testing.T) {
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+`).MatchString(VERSION) {
+		t.Fatalf("VERSION %q must be a semver", VERSION)
 	}
 }

@@ -1,315 +1,304 @@
 # Reference
 
-The complete public surface of `@tabnas/zon` (TypeScript): exports,
-the parse entry, the two options, and the exact ZON syntax accepted.
-For a guided introduction see the [tutorial](tutorial.md); for task
-recipes see the [how-to guide](guide.md); for how it works see
-[concepts](concepts.md).
+The complete API surface, the option set, and the notation accepted. For an
+introduction see [tutorial.md](tutorial.md); for recipes see
+[guide.md](guide.md); for the design rationale see
+[concepts.md](concepts.md).
 
-## Package
-
-```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
-```
-
-| | |
-|---|---|
-| Package | `@tabnas/zon` |
-| Module type | CommonJS (`main: dist/zon.js`, types `dist/zon.d.ts`) |
-| Peer deps | `@tabnas/parser` >= 2, `@tabnas/jsonic` >= 2 |
-| Engine | `@tabnas/parser` (Tabnas) |
-| Underlying grammar | `@tabnas/jsonic` |
-
-## Exports
-
-| Export | Kind | Description |
-|---|---|---|
-| `Zon` | `Plugin` | The plugin function. Register with `engine.use(Zon, options)`. |
-| `VERSION` | `string` | This package's version, always equal to `package.json` "version". |
-| `ZonOptions` | type | The options object shape (see [Options](#options)). |
-
-`Zon.defaults` (a `ZonOptions`) holds the merged default options:
-
-```typescript
-Zon.defaults = {
-  charAsNumber: false,
-  enumTag: null,
-}
-```
-
-## Parse entry
-
-The plugin has **no convenience `parse()` function** of its own. You
-parse by building a Tabnas engine, layering the jsonic grammar, then
-the `Zon` plugin, and calling the engine's `.parse()`:
+All exports come from the package root:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
-
-const j = new Tabnas().use(jsonic).use(Zon)
-
-j.parse('.{ .a = 1 }') // => { a: 1 }
+const {
+  Chess, VERSION,
+  parse, parseGame, parseSan,
+  stripCommands, ANNOTATION_NAG,
+} = require('@tabnas/chess')
 ```
 
-### `engine.use(Zon, options?)`
+## The plugin
 
-Registers and immediately applies the plugin. Returns the engine, so
-registrations chain (`new Tabnas().use(jsonic).use(Zon, opts)`). The
-plugin merges `options` over `Zon.defaults`, installs the embedded ZON
-grammar, and re-applies its jsonic option overrides (struct/tuple
-tokens, `=` separator, identifier keys, Zig escapes, ZON comments, the
-strict Zig number lexer, and the five custom lex matchers).
+### `Chess`
 
-The instance is reusable and stateless across parses; build it once
-and reuse it. Building the grammar dominates a parse, so do not
-reconstruct the engine per call.
+A Tabnas plugin. Install it on a bare engine — it is not a jsonic
+extension, and needs no other grammar underneath.
 
-### `engine.parse(src)`
+```js
+const { Tabnas } = require('@tabnas/parser')
+const { Chess } = require('@tabnas/chess')
 
-Parses a ZON source string and returns the resulting JavaScript value.
-Objects come back as maps built with `Object.create(null)` (no
-prototype); arrays are plain arrays; scalars are `number`, `string`,
-`boolean`, or `null` — plus `bigint` for an integer literal too large to
-be an exact double. A failed parse throws (see [Errors](#errors)).
+const tn = new Tabnas().use(Chess)
+
+tn.parse('1. e4 *')[0].result // => '*'
+```
+
+`tn.parse(src)` then returns whatever the configured start rule builds — by
+default a `Game[]`.
+
+### `VERSION`
+
+The package version, as a string. Checked against `package.json` by
+`test/version.test.ts`.
 
 ## Options
 
-`ZonOptions` has exactly two fields:
-
-```typescript
-type ZonOptions = {
-  charAsNumber: boolean
-  enumTag: null | string
-}
-```
-
-### `charAsNumber`
-
-- **Type:** `boolean`
-- **Default:** `false`
-- **Effect:** Controls how Zig character literals (`'x'`, `'\n'`,
-  `'\x41'`, `'\u{1F600}'`) are parsed.
-  - `false` — the literal becomes a one-character string. `'A'` → `'A'`.
-  - `true` — the literal becomes its numeric Unicode code point. `'A'`
-    → `65`, `'\n'` → `10`, `'\u{1F600}'` → `128512`.
+Pass options as the second argument to `use`:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { Chess } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon, { charAsNumber: true })
-j.parse("'A'") // => 65
+const tn = new Tabnas().use(Chess, { strict: true, commands: false })
+
+tn.parse('1. e4 {[%clk 0:01]} *')[0].moves[0].comments[0].commands // => undefined
 ```
 
-### `enumTag`
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `strict` | boolean | `false` | Accept only export-format notation. See below. |
+| `commands` | boolean | `true` | Parse `[%name arg,arg]` markup inside comments into `Comment.commands`. |
+| `start` | string | `'pgn'` | Which rule to parse from, and so what `parse` returns. |
 
-- **Type:** `null | string`
-- **Default:** `null`
-- **Effect:** Controls how enum-literal *values* (a bare `.foo` used in
-  value position) are represented.
-  - `null` — the enum literal becomes the bare identifier string.
-    `.red` → `'red'`.
-  - a string `T` — the enum literal is wrapped in a one-key object
-    `{ [T]: name }`, so it can be distinguished from an ordinary
-    string. With `enumTag: '$enum'`, `.red` → `{ $enum: 'red' }`.
+### Start rules
 
-The tag affects enum literals only when they are *values*. A `.field`
-used as a key (before `=`) is always the plain field name regardless of
-`enumTag`.
+| `start` | Accepts | Returns |
+|---|---|---|
+| `pgn` | a whole database, zero or more games | `Game[]` |
+| `game` | one tag section plus one movetext section | `Game` |
+| `movetext` | an element sequence, no tag pairs | `Line` |
+| `move` | a single SAN move | `Move` |
+
+### Import format vs export format
+
+The PGN standard defines two (section 3): *import* format is "intentionally
+lax" and describes data prepared by hand; *export* format is what a program
+is allowed to write. `strict: false` (the default) reads import format;
+`strict: true` accepts only export format.
+
+Six things are import-only:
+
+| Written | Export format | Section |
+|---|---|---|
+| `0-0`, `0-0-0` | `O-O`, `O-O-O` — the letter, not the digit | 8.2.3.3 |
+| `Pe4` | `e4` — no pawn letter | 8.2.3.2 |
+| `e8Q` | `e8=Q` — promotion takes an equal sign | 8.2.3.3 |
+| `e4!`, `e4??` | `e4 $1`, `e4 $4` — glyphs, not suffixes | 8.2.3.8 |
+| `e4++` | `e4+` — there is no double-check marking | 8.2.3.5 |
+| `$999` | `$0` … `$255` | 8.2.4 |
+
+Everything else — free layout, missing move numbers, a missing termination
+marker, superfluous move numbers — is accepted by both, because the standard
+does not require otherwise.
+
+## Functions
+
+### `parse(src, options?) => Game[]`
+
+Parse a PGN database. Throws on malformed notation; returns `[]` for empty
+source.
+
+`options` is `DatabaseOptions` — `ChessOptions` without `start`. These two
+functions parse a database and their return types say so, so the start rule
+is fixed at `pgn` (in the types, and at run time for callers who have
+none). Install the plugin directly for another entry rule.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parse } = require('@tabnas/chess')
 
-const j = new Tabnas().use(jsonic).use(Zon, { enumTag: '$enum' })
-j.parse('.{ .kind = .red, .label = "red" }') // => { kind: { $enum: 'red' }, label: 'red' }
+parse('1. e4 1-0\n\n1. d4 0-1').length // => 2
+parse('').length                       // => 0
 ```
 
-## ZON syntax
+### `parseGame(src, options?) => Game | undefined`
 
-ZON is **not** a superset of JSON. It uses Zig anonymous-struct
-syntax. The plugin disables the bare `{`, `[`, `]` openers and rebinds
-the key/value separator to `=`.
+The first game of `parse(src, options)`, or `undefined` if there is none.
+Takes `DatabaseOptions`, as `parse` does.
 
-### Structs (maps)
+```js
+const { parseGame } = require('@tabnas/chess')
 
-A struct literal opens with `.{`, contains `.field = value` pairs
-separated by commas, and closes with `}`. Field names are identifiers
-(`[A-Za-z_][A-Za-z0-9_]*`), written with a leading dot that is
-stripped from the key. A name that is not a legal identifier is written
-`.@"..."` — any string literal, with the same escapes — and a struct may
-not repeat a field name.
-
-```
-.{ .a = 1, .b = 2 }     => { a: 1, b: 2 }
-.{ .a = .{ .b = 1 } }   => { a: { b: 1 } }
-.{ .@"a b" = 1 }        => { 'a b': 1 }
-.{ .a = 1, .a = 2 }     => error: duplicate struct field name
+parseGame('1. e4 e5 *').moves.length // => 2
+parseGame('')                        // => undefined
 ```
 
-### Tuples (lists)
+### `parseSan(src, options?) => Move | undefined`
 
-A tuple literal also opens with `.{`, but contains bare values (no
-`.field =`), separated by commas, and closes with `}`. It produces an
-array.
+Take a single SAN move string apart. Returns `undefined` rather than
+throwing when `src` is not a move — the whole string must be one move, so a
+prefix match does not count.
 
-```
-.{ 1, 2, 3 }            => [1, 2, 3]
-.{ "a", "b" }           => ['a', 'b']
-.{ .{ 1, 2 }, .{ 3, 4 } } => [[1, 2], [3, 4]]
-```
+```js
+const { parseSan } = require('@tabnas/chess')
 
-The struct-vs-tuple decision is made at lex time by peeking past the
-`.{`: if the next significant token is a field name (`.identifier` or
-`.@"..."`) followed by `=`, it is a struct; otherwise it is a tuple.
-
-### Empty literal
-
-An empty `.{}` parses as an **empty array** (`[]`), since with no
-contents there is no `.field =` to mark it as a struct.
-
-```
-.{}                     => []
+parseSan('Nbd7').disambiguation // => ({ file: 'b' })
+parseSan('e4e5')                // => undefined
 ```
 
-### Trailing commas
+Only `strict` is read from `options`; the move carries no `number` or
+`side`, because a move on its own has no place in a game.
 
-A trailing comma before `}` is allowed in both structs and tuples.
+### `stripCommands(text) => string`
 
+Remove `[%name …]` markup from a comment body, collapse the whitespace it
+leaves behind, and trim.
+
+```js
+const { stripCommands } = require('@tabnas/chess')
+
+stripCommands('good [%clk 0:05:00] move') // => 'good move'
 ```
-.{ .a = 1, }            => { a: 1 }
-.{ 1, 2, 3, }           => [1, 2, 3]
+
+### `ANNOTATION_NAG`
+
+The glyph each traditional suffix annotation maps to (8.2.3.8, 10).
+
+```js
+const { ANNOTATION_NAG } = require('@tabnas/chess')
+
+ANNOTATION_NAG['!']  // => 1
+ANNOTATION_NAG['?']  // => 2
+ANNOTATION_NAG['!!'] // => 3
+ANNOTATION_NAG['??'] // => 4
+ANNOTATION_NAG['!?'] // => 5
+ANNOTATION_NAG['?!'] // => 6
 ```
 
-### Scalars
+## Types
 
-| Construct | Example | Result |
+### `Move`
+
+One move, as written. Every field is something the notation stated; a field
+the notation did not state is absent, never guessed.
+
+| Field | Type | Present when |
 |---|---|---|
-| Integer | `42` | `42` |
-| Float | `3.14` | `3.14` |
-| Hex | `0x2a` | `42` |
-| Octal | `0o52` | `42` |
-| Binary | `0b101010` | `42` |
-| Hex float | `0x1.8p1` | `3` |
-| Exponent | `1e5`, `12_3.0E+77` | `100000`, `1.23e+79` |
-| Digit separator | `1_000_000` | `1000000` |
-| Infinity / NaN | `inf`, `-inf`, `nan` | `Infinity`, `-Infinity`, `NaN` |
-| Big integer | `36893488147419103231` | `36893488147419103231n` (a `bigint`) |
-| Boolean | `true`, `false` | `true`, `false` |
-| Null | `null` | `null` |
-| String | `"hello"` | `'hello'` |
-| Enum literal | `.red`, `.@"a b"` | `'red'`, `'a b'` (or `{ tag: ... }`) |
-| Char literal | `'A'` | `'A'` (or `65`) |
+| `san` | string | always — the move verbatim, minus any suffix annotation |
+| `piece` | `'P' \| 'N' \| 'B' \| 'R' \| 'Q' \| 'K'` | always — `P` for a pawn move, `K` for castling |
+| `to` | string | always except castling — the destination square, e.g. `'e4'` |
+| `disambiguation` | `{ file?: string, rank?: number }` | the notation stated part of the origin (8.2.3.4), including the file of a capturing pawn |
+| `capture` | `true` | the move is written as a capture |
+| `promotion` | `'N' \| 'B' \| 'R' \| 'Q'` | the move promotes |
+| `castle` | `'king' \| 'queen'` | the move is castling |
+| `check` | `'+' \| '#'` | a check or checkmate indicator was written (8.2.3.5) |
+| `annotation` | `'!' \| '?' \| '!!' \| '??' \| '!?' \| '?!'` | a suffix annotation was written (8.2.3.8) |
+| `number` | number | in a game or movetext — the fullmove number |
+| `side` | `'w' \| 'b'` | in a game or movetext — the side that played it |
+| `nags` | `number[]` | glyphs follow the move |
+| `comments` | `Comment[]` | comments follow the move |
+| `variations` | `Line[]` | variations follow the move |
 
-### Numbers are Zig numbers, not relaxed-JSON numbers
+There is no `from`. A parser with no board cannot resolve the origin of
+`Nf3`; `disambiguation` is what the notation actually said.
 
-The plugin replaces jsonic's number lexer with one that implements Zig's
-literal grammar exactly, so ZON's strictness is preserved:
+### `Line`
 
-```
-+1      .5      5.      0123      00      -0
-1__0    1_      _1      0x_2A     0X2A    0O52
-0b12    0o18    1abc    1e        0b1.1   0.1.2
-```
+A move sequence: a game's mainline, or one variation.
 
-are all **rejected**, as the zig compiler rejects them. A leading `-` is a
-negation prefix and may be separated by space (`- 1`); `-nan` is not a
-literal. An integer whose exact value does not fit an IEEE-754 double is
-returned as a `bigint` rather than silently rounded — everything else is a
-`number`.
-
-### Strings
-
-Double-quoted strings only (single quotes are reserved for char
-literals). Zig-flavoured escapes are recognised: `\n`, `\r`, `\t`,
-`\\`, `\"`, `\'`. Unknown escapes are an error.
-
-```
-"hello"                 => 'hello'
-"a\nb"                  => 'a\nb'
-"a\\b"                  => 'a\b'
-```
-
-### Multi-line strings
-
-Consecutive lines beginning with `\\` form one string. Each line
-contributes its text after the `\\`; lines are joined with `\n`. Zig's
-tokenizer lexes the whole run as one token and skips the whitespace
-between the lines, so **blank lines inside the run continue the literal**
-(contributing an empty line) rather than ending it.
-
-```
-\\hello
-\\world                 => 'hello\nworld'
-```
-
-### Character literals
-
-Single-quoted Zig char literals: a single character, or an escape
-`'\n'` `'\r'` `'\t'` `'\\'` `'\''` `'\"'` `'\0'`, a hex escape
-`'\xNN'`, or a Unicode escape `'\u{...}'`. By default the result is a
-one-character string; with `charAsNumber: true` it is the numeric code
-point.
-
-```
-'A'                     => 'A'   (or 65 with charAsNumber)
-'\n'                    => '\n'  (or 10)
-'\u{1F600}'             => '😀'  (or 128512)
-```
-
-### Comments
-
-`//` line comments only. They are discarded. `//!` and `///` are Zig
-**doc** comments, which ZON rejects; `////` (four or more slashes) is an
-ordinary comment again.
-
-```
-.{
-  // a comment
-  .name = "x", // trailing comment
-}                       => { name: 'x' }
-```
-
-(Jsonic's `#` hash comments and `/* */` block comments are disabled by
-the plugin.)
-
-## Tokens
-
-The plugin's lexer produces these tokens (as surfaced in the railroad
-diagram legend):
-
-| Token | Source | Meaning |
+| Field | Type | Present when |
 |---|---|---|
-| `#OB` | `.{` | start of a struct (map) |
-| `#OS` | `.{` | start of a tuple (list) |
-| `#CB` | `}` | close of struct or tuple |
-| `#CL` | `=` | key/value separator |
-| `#TX` | `.ident`, `.@"..."` | field name (key) or enum literal (value) |
-| `VAL` | — | a value: number, string, `true`/`false`/`null`, or `.enum` |
+| `moves` | `Move[]` | always |
+| `comments` | `Comment[]` | comments precede the line's first move |
+| `nags` | `number[]` | glyphs precede the line's first move |
+| `variations` | `Line[]` | a variation precedes the line's first move |
 
-`{`, `[`, and `]` are **not** tokens — they are removed, so a bare `{`
-is a syntax error.
+An annotation belongs to the move it follows. The three optional fields here
+hold the ones with no move to follow, which annotate the starting position.
 
-## Grammar group tag
+### `Game`
 
-Every grammar alternate the plugin adds carries the group tag `zon`.
-Callers can switch the ZON alts off (restoring plain jsonic) via
-`rule.exclude: 'zon'`:
+A `Line`, plus the two things only a game has.
 
-```typescript
-const j = new Tabnas().use(jsonic).use(Zon).options({
-  rule: { exclude: 'zon' },
-})
-```
+| Field | Type | Present when |
+|---|---|---|
+| `tags` | `Record<string, string>` | always — may be empty |
+| `result` | `'1-0' \| '0-1' \| '1/2-1/2' \| '*'` | a termination marker was written |
 
-## Errors
+Tag values are raw strings, in the order the file wrote them. A repeated tag
+name keeps the first value (8.1 says a name should not repeat).
 
-A failed parse throws the engine's standard parse error. It carries
-the usual fields — an error `code`, the source location (`row`, `col`,
-`pos`), the offending `src` fragment, and a formatted multi-line
-`message` with a source-context extract. Inputs that are valid jsonic
-but not valid ZON (such as a bare `{` opener) are errors.
+### `Comment`
+
+| Field | Type | Present when |
+|---|---|---|
+| `kind` | `'brace' \| 'line'` | always — `{…}` or `;…` |
+| `text` | string | always — the body verbatim, markup and whitespace included |
+| `commands` | `Command[]` | `commands` is on and the body holds `[%…]` markup |
+
+### `Command`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | the word after `%` |
+| `args` | `string[]` | the rest, split on commas and trimmed |
+
+`[%name]` with no argument gives `args: []`.
+
+## Notation accepted
+
+### Tokens
+
+| Token | Is | Section |
+|---|---|---|
+| `#SAN` | a SAN move, suffix annotation included | 8.2.3 |
+| `#MVN` | a move number indication: digits, then zero or more periods | 8.2.2 |
+| `#NAG` | `$` and digits | 8.2.4 |
+| `#RES` | `1-0`, `0-1`, `1/2-1/2` or `*` | 8.2.6 |
+
+| `#CMT` | `{ … }`, which may span lines and does not nest | 5 |
+| `#RMK` | `;` to the end of the line | 5 |
+| `#TGN` | a tag name: letters, digits, underscore | 8.1 |
+| `#ST` | a tag value: `"…"`, one line, escapes `\"` and `\\` | 7 |
+| `#OS` `#CS` | `[` and `]` | 7 |
+| `#OP` `#CP` | `(` and `)` | 7 |
+
+A `%` in the **first column** escapes the rest of the line (section 6); a
+`%` anywhere else is an error.
+
+A token ends before the first character that cannot continue a symbol
+(section 7), so `e2e4` is one bad token rather than the two moves `e2` and
+`e4` — and likewise `12e4` is not the move number `12` followed by `e4`.
+The one exception is the asterisk, which section 7 makes a token by itself
+and self-terminating, so `*1. e4` is a finished game and then another.
+
+Two bounds follow from the same section. A move number starts at 1 —
+section 8.2.2 says the indication gives the number of the move that
+follows, and there is no move zero — and neither a move number nor a glyph
+value may run past nine digits, which is far beyond any real game and keeps
+an absurd literal away from the number parser.
+
+### Rules
+
+The grammar is [`chess-grammar.jsonic`](../../chess-grammar.jsonic), drawn
+as a railroad diagram in [`grammar.svg`](grammar.svg) and
+[`grammar.txt`](grammar.txt).
+
+| Rule | Is |
+|---|---|
+| `pgn` | the start rule: a database of games |
+| `gameitem` | one game, then the next |
+| `game` | a tag section then a movetext section |
+| `tag`, `tagbody` | `[ Name "Value" ]` |
+| `movetext` | an element sequence |
+| `element` | a move, a move number, a glyph, a comment, or a variation |
+| `rav` | `( element-sequence )` |
+| `move` | an alternate entry point: one SAN move |
+
+### Errors
+
+Errors are the engine's, so they name the file, row and column, and quote
+the line. The codes you will see:
+
+| Code | Raised when |
+|---|---|
+| `unexpected` | the characters at this position are not a token any active rule accepts |
+| `unterminated_comment` | a `{` comment has no `}` |
+| `unterminated_string` | a tag value has no closing quote |
+
+## Limits
+
+Move **legality** is not checked, and cannot be: there is no board here. A
+syntactically perfect move to an impossible square parses fine.
+
+Not implemented: FEN and EPD as standalone documents (16.1, 16.2) — the
+`FEN` *tag* is read for its side-to-move and fullmove number, but its value
+stays a raw string. Also not implemented: the non-standard `--` / `Z0` null
+move and `(=)` draw offer that some tools emit.

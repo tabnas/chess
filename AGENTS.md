@@ -1,313 +1,226 @@
-# Agents Guide — zon
+# Agents Guide — chess
 
-> **Starting a new plugin from this template?** This repo is the scaffold
-> other Tabnas grammar plugins are copied from. Read
+> **Starting a new plugin from this repo?** Read
 > **[`TEMPLATE.md`](TEMPLATE.md)** first — it covers the tabnas **engine
 > model** (lexer + rules/alts), the **ecosystem map** (jsonic vs abnf vs
 > the bare engine), **which files to copy vs rewrite**, and how to get a
-> **green build in an isolated checkout**. This file (`AGENTS.md`)
-> documents `@tabnas/zon`'s own internals.
+> **green build in an isolated checkout**. This file documents
+> `@tabnas/chess`'s own internals.
 
 ## What this project is
 
-`@tabnas/zon` is a **grammar plugin** that parses
-[Zig Object Notation (ZON)](https://ziglang.org/documentation/master/#ZON)
-— the data format used by Zig `build.zig.zon` manifests, built on Zig
-anonymous struct literals:
+`@tabnas/chess` is a **grammar plugin** that parses chess notation: PGN
+(Portable Game Notation) games and the SAN (Standard Algebraic Notation)
+moves inside them.
 
-```zon
-.{
-    .name = "example",
-    .version = "0.0.1",
-    .dependencies = .{ .foo = .{ .url = "https://..." } },
-    .paths = .{ "build.zig", "src" },
-}
+```pgn
+[Event "F/S Return Match"]
+[Result "1/2-1/2"]
+
+1. e4 e5 2. Nf3 {The main line.} Nc6 $1 (2... d6 3. d4) 1/2-1/2
 ```
 
-Unlike `@tabnas/json` (a plugin on the bare engine), this is a
-**jsonic plugin**: it layers on `@tabnas/jsonic`'s relaxed-JSON grammar
-and then reshapes it into ZON. Install it on a jsonic-enabled engine —
-`new Tabnas().use(jsonic).use(Zon)` (TS) / `jsonic.Make()` then
-`UseDefaults(Zon, ...)` (Go). It does three things on top of jsonic:
+Unlike `@tabnas/zon`, it is **not** a jsonic plugin: chess notation is not
+JSON-shaped, so there is nothing in relaxed JSON worth inheriting. It
+installs on the bare engine — `new Tabnas().use(Chess)` — the way
+`@tabnas/json` does.
 
-1. **Disables jsonic extensions** it doesn't want (`rule.exclude:
-   'jsonic,imp'` removes implicit maps/lists, top-level commas, path
-   dives) and remaps fixed tokens — bare `{` `[` `]` are nulled out and
-   `#CL` (the key/value separator) becomes `=` instead of `:`. It also
-   turns jsonic's **number lexer off** (`number.lex: false`), because
-   relaxed-JSON numbers are not ZON numbers.
-2. **Adds five custom lex matchers** (`zonDot`, `zonMultiString`,
-   `zonChar`, `zonNumber`, `zonDocComment`) for Zig syntax the jsonic
-   lexer can't express — or, for the last two, for syntax it would
-   wrongly *accept*.
-3. **Adds four grammar-rule alts** (`val`/`list`/`elem`/`pair`) so a
-   single `}` (`#CB`) closes both struct and tuple literals, plus a
-   `@pair-bc/prepend` guard that rejects duplicate field names.
+The reference document is the **PGN standard** (Steven J. Edwards, 1994).
+Every section number in the source, the docs and the fixtures refers to it.
+Read [`ts/doc/concepts.md`](ts/doc/concepts.md) before changing anything: it
+is where the two load-bearing decisions are argued.
 
-The signature ZON trick: `.{` is **disambiguated at lex time** by the
-`zonDot` matcher. It peeks ahead — `.{ .ident =` → emits `#OB` (struct /
-map); anything else → `#OS` (tuple / list). A bare `.identifier` (or
-`.@"any name"`) emits `#TX` (leading dot stripped), valid as both a `KEY`
-(before `=`) and a `VAL` (an enum literal). Two options shape values:
-`charAsNumber` (parse `'x'` char literals as code points vs one-char
-strings) and `enumTag` (wrap enum-literal values `.foo` in
-`{ [enumTag]: 'foo' }`).
+It does three things:
 
-## Conformance claim
+1. **Lexes the regular part of the notation** with five gated match-token
+   matchers (`#SAN`, `#MVN`, `#NAG`, `#RES`, `#TGN`) and three ungated
+   hand-written ones (`pgnComment`, `pgnRemark`, `pgnEscape`).
+2. **Parses the recursive part** — games, tag pairs, variations — with nine
+   rules in [`chess-grammar.jsonic`](chess-grammar.jsonic).
+3. **Builds a plain game model** (`Game[]`) in the `ref` actions, rather
+   than the engine's generic `{rule, src, kids}` tree.
 
-**`@tabnas/zon` accepts exactly the documents `ziglang/zig` 0.16.0
-accepts, and produces the same value for each.** That is not a slogan:
-the reference implementation itself is the judge. `std.zig.Ast` (in
-`.zon` mode) plus `std.zig.ZonGen`, from a pinned zig 0.16.0, decide
-every verdict and every value in the two corpora
-[`scripts/fetch-zigzon.sh`](scripts/fetch-zigzon.sh) generates.
+## The two decisions that shape everything
 
-**Measured (zig 0.16.0, commit `24fdd5b7a4c1`, both runtimes identical):**
+**1. A SAN move is lexed whole, not parsed character by character.** PGN
+section 7 classes it as a symbol token, and it has to be: the lexer skips
+whitespace, so a scannerless grammar could not tell `Nb1 d2` (two moves)
+from `Nb1d2` (one). The move grammar is not LL(1) either — `e4` and `exd5`
+diverge three characters in — and the engine does not backtrack. So the
+regular part lives in a regex and only the recursive part is a grammar.
 
-| Corpus | Documents | Accepted correctly | Rejected correctly |
-|---|---|---|---|
-| `test/zigzon/cases.json` — every `.zon` file in the zig tree plus every ZON snippet in `lib/std/zon/parse.zig` | 228 | **184 / 184** (values compared, not just "it parsed") | **44 / 44** |
-| `test/strictness/cases.json` — locally authored leniency probes, judged by the same oracle | 117 | **45 / 45** | **72 / 72** |
-
-The corpora are **not bundled** — generating them downloads a pinned zig
-toolchain and source tarball (~80 MB, verified by SHA-256 and cached in
-`test/zigzon/vendor/`, git-ignored). They are **not opt-in**: both
-runtimes generate them themselves before grading, so the suites run
-everywhere `npm test` / `go test ./...` runs, CI included.
-
-- TypeScript: the `pretest` hook in `ts/package.json`.
-- Go: `TestMain` in `go/zigzon_test.go` (the shared CI workflow calls
-  `go test ./...` directly and has no repo-specific step to hang a fetch
-  on).
-
-If a corpus is still missing after that, the suites **FAIL** with
-instructions — they never skip. A conformance suite that quietly does not
-run reports a green tick while measuring nothing, which is worse than no
-suite. Both runners also pin the exact corpus census (184/44 and 45/72),
-so narrowing a corpus goes red instead of inflating the pass rate.
-
-The single exception is a host `scripts/fetch-zigzon.sh` has no pinned zig
-oracle toolchain for — anything other than linux/macos on x86_64/aarch64.
-There each suite emits one explicit, platform-named skip. That is a
-declared platform limit, not a missing file.
-
-Every behaviour the corpora pin that is expressible as `input → JSON` is
-**also** committed as a shared fixture in [`test/spec/`](test/spec/)
-(notably [`strict.tsv`](test/spec/strict.tsv)), so the same rules are
-gated without the download.
-
-### The documented deviations
-
-Two, both about how a schema-less parser can represent a value that Zig
-resolves against a target type:
-
-1. **Numbers are IEEE-754 doubles, except integers that would lose
-   precision.** An integer literal whose exact value is not representable
-   as a double is returned as a **`bigint`** (TS) / **`*big.Int`** (Go)
-   rather than silently rounded. Floats are always doubles: `f128`
-   literals are narrowed, as they are in any JSON-shaped parser.
-2. **`.{}` parses as the empty LIST**, because at the syntax level an
-   empty anonymous literal is both an empty struct and an empty tuple and
-   only a target type can tell them apart.
-
-Everything else the reference rejects, this parser rejects — including
-the cases jsonic's relaxed lexer would otherwise wave through
-(`+1`, `.5`, `5.`, `0123`, `1__0`, `0x_2A`, `0X2A`), duplicate struct
-field names, and `//!` / `///` doc comments.
+**2. The model reports what the notation said, and nothing else.** There is
+no `from`: a parser with no board cannot resolve the origin of `Nf3`.
+`disambiguation` holds as much of the origin square as was written. Adding
+an inferred field would make the parser a chess engine, and a bad one.
 
 ## Repository map
 
 | Path | What it is |
 |---|---|
-| [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/zon` package. Plugin in `src/zon.ts`. Peer-depends on `@tabnas/jsonic` and `@tabnas/parser`. No CLI. |
-| [`go/`](go/) | Go port — `github.com/tabnas/zon/go` (`const VERSION` in `go/zon.go`). Plugin `Zon` plus `MakeJsonic` / `Parse` helpers. Requires the published `github.com/tabnas/jsonic/go` (no `replace` directive). |
-| [`ts/zon-grammar.jsonic`](ts/zon-grammar.jsonic) | **Single source of truth** for the grammar-rule alts (the `val`/`list`/`elem`/`pair` overrides), authored in jsonic syntax. |
-| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Embeds `zon-grammar.jsonic` into **both** `src/zon.ts` and `go/zon.go` (between `BEGIN/END EMBEDDED` markers) as a `grammarText` string literal. Runs as the first half of `npm run build`. |
-| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **Both** runners auto-discover and run every file here, so adding one covers TypeScript and Go together. See [`test/AGENTS.md`](test/AGENTS.md). |
-| [`ts/test/`](ts/test/) | TS tests (`.ts`, compiled to `dist-test/`): `zon.test.ts` (parse cases), `parity.test.ts` (the shared `test/spec/*.tsv` fixtures), `zigzon.test.ts` (the zig reference corpora), `debug-model.test.ts` (the `@tabnas/debug` composition / model introspection), `doc-examples.test.ts` (runs `// =>` assertions in README/doc fences), `version.test.ts` (the exported `VERSION` vs `package.json`). |
-| [`go/zon_test.go`](go/zon_test.go), [`go/parity_test.go`](go/parity_test.go), [`go/zigzon_test.go`](go/zigzon_test.go) | Go test suite — the same parse cases, the same `.tsv` fixtures, and the same zig reference corpora. |
-| [`go/version_test.go`](go/version_test.go) | Checks the Go `const VERSION` against `ts/package.json` (mirrors `ts/test/version.test.ts`). Fails, never skips, if that file cannot be read. |
-| [`scripts/fetch-zigzon.sh`](scripts/fetch-zigzon.sh) | Generator for the zig reference corpora, run automatically by `pretest` (ts) and `TestMain` (go): downloads a pinned zig 0.16.0 toolchain + source (each **verified against a pinned SHA-256**; a mismatch is a hard failure), builds [`test/zigzon/tools/oracle.zig`](test/zigzon/tools/oracle.zig) (a batch judge over `std.zig.Ast` + `std.zig.ZonGen`), harvests every ZON document in the tree ([`harvest.py`](test/zigzon/tools/harvest.py)) and records its verdict ([`judge.py`](test/zigzon/tools/judge.py)). |
-| [`test/strictness/inputs.txt`](test/strictness/inputs.txt) | The locally authored leniency probes. This file decides the **questions**; the oracle decides every **answer**. |
-| [`ts/doc/grammar.svg`](ts/doc/grammar.svg), [`ts/doc/grammar.txt`](ts/doc/grammar.txt) | Railroad / ASCII diagram of the live grammar, generated by `@tabnas/railroad`. |
-| [`ts/doc/`](ts/doc/), [`go/doc/`](go/doc/) | Per-runtime 4-quadrant Diataxis docs: `tutorial.md`, `guide.md`, `reference.md`, `concepts.md` (the Go `concepts.md` also covers differences from TS). |
+| [`chess-grammar.jsonic`](chess-grammar.jsonic) | **Single source of truth** for the rule table, authored in jsonic so it can carry comments. |
+| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **both** `ts/src/chess.ts` and `go/chess.go`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; neither runtime parses jsonic at run time. |
+| [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/chess` package. Plugin in `src/chess.ts`. Peer-depends on `@tabnas/parser`. |
+| [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
+| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **Both** runtimes auto-discover and run every file here, so adding one covers TypeScript and Go together. See [`test/AGENTS.md`](test/AGENTS.md). |
+| [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
+| [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
+| [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by both runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
+| [`web/`](web/) | The `<chess-game>` web component — a board view built on the TS package, bundled self-contained by `web/build.js`. **Not** part of the parser: it holds the legal move generator the parser deliberately does not have. See [`web/README.md`](web/README.md). |
 
-## The tabnas engine dependency
+## Repo-specific gotchas
 
-This repo sits **above jsonic** in the stack, not directly above the bare
-engine. The packages are **published on npm** (`@tabnas/*`); the
-`file:` paths in `package.json` are the monorepo dev layout, not a
-requirement.
+- **Custom match tokens are gated by the token columns.** A `match.token`
+  matcher only runs where some active alternate names its token. That is
+  what makes `Event` a tag name inside `[…]` and a lex error in the
+  movetext — but it also means **every alternate must name the tokens it
+  expects**, including ones it only wants to hand back with `b: 1`. A
+  missing name shows up as `unexpected character(s)` on input that is
+  obviously fine. This is why the grammar is full of `#EEND` alternates
+  that do nothing but backtrack.
 
-- TypeScript: `@tabnas/jsonic` and `@tabnas/parser` are both
-  `peerDependencies` in `ts/package.json` (that file is the authority on
-  the accepted ranges), each mirrored as a `file:../../<dep>/ts`
-  devDependency for monorepo builds. `@tabnas/debug`
-  and `@tabnas/railroad` are **dev-only** `file:` devDependencies — debug
-  for the `debug-model.test.ts` composition test, railroad to regenerate
-  `ts/doc/grammar.{svg,txt}`. The supported Node floor is `engines.node`
-  in the same file (builds/tests also run on the previous Node LTS with
-  harmless `EBADENGINE` warnings).
-- Go: `go/go.mod` `require`s the published modules directly
-  (`github.com/tabnas/{jsonic,json,parser}/go`, at the versions pinned in
-  that file) with **no `replace`** — `go build`/`go test` resolve them
-  from the module proxy.
+- **The three hand-written matchers are deliberately NOT gated.** `{`, `;`
+  and a first-column `%` mean the same thing everywhere, so they live in
+  the `lex.match` registry (orders 1.2e6 / 1.3e6 / 1.5e6, all below the
+  fixed matcher at 2e6). Being hand-written is also what lets `pgnComment`
+  keep `pnt.rI` / `pnt.cI` honest across a comment that spans lines; a
+  regex matcher would leave every later error position wrong.
 
-**Two dev models:**
-- *Monorepo:* clone `jsonic` and `parser` (plus `json`, `debug`,
-  `railroad`) as siblings, build the TS halves (`cd parser/ts && npm
-  install && npm run build`, likewise `jsonic/ts`), then work here. CI
-  (`.github/workflows/build.yml`) does this.
-- *Isolated single-repo checkout:* the `file:` symlinks dangle; install
-  the registry versions instead. See
-  [`TEMPLATE.md` §4](TEMPLATE.md#4-dev-environment-realities) for the exact
-  verified green-build recipe.
+- **`comment.lex` is off.** PGN comments are content, not whitespace: they
+  are `#CMT` / `#RMK` tokens the grammar keeps. The only thing genuinely
+  discarded is the section 6 `%` escape, which is emitted as `#CM` (in the
+  IGNORE set) because the standard says this kind of software should ignore
+  it.
+
+- **One regex lexes a SAN move AND takes it apart.** `sanPattern()` builds
+  it with named groups; the lexer uses `m[0]` and `buildMove()` uses
+  `m.groups`. Do not add a second pattern — the token boundary and the field
+  values must not be able to disagree. `strict` builds a narrower regex from
+  the same template for the same reason.
+
+- **The symbol-tail guard is load-bearing.** Without it the SAN pattern
+  matches the `e2` prefix of `e2e4` and the parse silently yields two
+  moves — the worst possible outcome, worse than an error. Section 7 says
+  a symbol token ends before the first non-symbol character; the guard is
+  that rule. TS spells it as the `SYMBOL_TAIL` lookahead inside the
+  pattern; Go, which has no lookahead, spells it as the `endsToken` check
+  the matcher runs after the match.
+
+- **`#RES` must be tried before `#MVN`.** Match-token matchers run in
+  token-id order, which is registration order, and `1-0` starts with a
+  digit. TS relies on the `match.token` key order plus a `(?![-/])` guard
+  in `MOVE_NUMBER`; Go on the `j.Token` call order plus `TokenOrder`. Keep
+  every one of them.
+
+- **Rules without a node inherit the enclosing one.** `movetext`, `element`,
+  `tag` and `tagbody` have no node of their own, so `r.node` in their
+  actions is the game or the variation. That is what makes a variation and
+  a game the same shape. `@movetext-bo` allocates one only when `movetext`
+  is the start rule and so has no parent.
+
+- **Move numbering lives on the node, non-enumerably.** The running
+  `{number, side}` counter hangs off the line under a `Symbol.for` key, so
+  the parse result is plain JSON with no clean-up pass. `@rav-bo` seeds a
+  fresh counter from the move the variation replaces.
+
+- **A `[` after the movetext starts the NEXT game**, and so does anything
+  after a termination marker (8.2.6: the marker is the LAST element). Those
+  are the `@more-tags` and `@no-result` conditions on two `game` close
+  alternates, not whitespace rules — blank lines between games are layout
+  (8.2.1), not grammar.
+
+- **The asterisk is the one result that needs no boundary.** Section 7
+  makes `*` "a token by itself... self terminating", while `1-0`, `0-1` and
+  `1/2-1/2` are symbol tokens. That is why `RESULT` guards three of the
+  four and not the asterisk, and why `*1. e4 *` is two games.
+
+- **The tag map has a null prototype.** Section 8.1 admits any name of
+  letters, digits and underscore, `__proto__` among them, and on an
+  ordinary object that assignment sets the prototype instead of a property
+  — silently losing a legal tag.
 
 ## Authority and alignment rules
 
 1. **TypeScript is canonical.** When TS and Go disagree on parse
-   behavior, TS wins; change Go to match.
+   behaviour, TS wins; change Go to match.
 2. **The grammar source is single-sourced, not duplicated.**
-   `ts/zon-grammar.jsonic` is authored once; `embed-grammar.js` copies it
-   verbatim into the `grammarText` literal in both `src/zon.ts` and
-   `go/zon.go`. **Never hand-edit the text between the
-   `--- BEGIN/END EMBEDDED zon-grammar.jsonic ---` markers** in either
-   file — edit `zon-grammar.jsonic` and re-run `npm run embed` (or
-   `npm run build`, which embeds first). The Go embed step rejects a
-   grammar containing backticks (incompatible with Go raw strings).
-3. The two ports must produce the same values for the same input. The
+   `chess-grammar.jsonic` is authored once; `embed-grammar.js` compiles it
+   into the `grammarText` literal in **both** `ts/src/chess.ts` and
+   `go/chess.go`. **Never hand-edit the text between the
+   `--- BEGIN/END EMBEDDED chess-grammar.jsonic ---` markers** — edit the
+   `.jsonic` and re-run `npm run embed` (or `npm run build`, which embeds
+   first). Build the TS side before the Go side after a grammar change, or
+   Go compiles against a stale copy. The Go embed rejects a grammar
+   containing backticks (incompatible with Go raw strings).
+3. **The grammar carries no functions.** Actions are `@ref` strings the
+   plugin binds at load time; `embed-grammar.js` fails the build if an
+   `a`/`c`/`h`/`e` field is anything but a string. That is what keeps the
+   grammar shippable as data.
+4. **The two ports must produce the same values for the same input.** The
    parity contract is the shared grammar source plus the shared
-   `test/spec/*.tsv` fixtures, which both runtimes auto-discover (see
-   [`test/AGENTS.md`](test/AGENTS.md)). Add a new parse case there; the
-   in-language suites keep only what a fixture cannot express.
-4. The jsonic option overrides (`rule.exclude`, `fixed.token`,
-   `tokenSet.KEY`, `string`, `number`, `error`, `comment`, `value`,
-   `text.lex`, `lex.match`) and the five lex matchers exist in **both**
-   runtimes and must stay in step — they all live on the grammar object
-   so the plugin applies them atomically alongside its rule alts. Note
-   Go's `comment` block carries extra defs (hash/multi) the TS side
-   leaves to jsonic defaults; keep observable behavior aligned even where
-   the option surface differs slightly.
-5. The `Defaults` (`charAsNumber: false`, `enumTag` empty) and `VERSION`
-   const in `go/zon.go` mirror the TS `Zon.defaults` and the exported
-   `VERSION` in `ts/src/zon.ts`. Both `VERSION` constants MUST equal
-   `ts/package.json` "version" — `go/version_test.go` and
-   `ts/test/version.test.ts` read that file and fail (never skip) on drift.
-   The release orchestrator (`admin/publish.sh`) rewrites both.
-
-## Repo-specific gotchas
-
-- **The `enumTag` rewrap hook differs by runtime.** TS wraps the
-  enum-literal node in the `@val-ac` (after-close) phase, because the
-  relaxed-JSON grammar `/replace`s `@val-bc` and the engine then
-  suppresses any `/prepend` on it. Go uses `@val-bc/prepend`. Both
-  guard on `tkn.use.zonEnum` (the marker the `zonDot` matcher sets) and
-  only fire when `enumTag` is set. Don't "unify" these phases without
-  re-checking which one the live jsonic grammar leaves available.
-- **`zonDot` must out-order the fixed-token matcher** so it owns the `.`
-  prefix (TS `order: 1e5`; Go `Order: 100000`). The other two matchers
-  order after it.
-- **The list rules close on `#CB` (`}`), not the default `#CS`** — this
-  is what lets one `}` terminate both `.{ ... }` struct and tuple forms.
-  The empty `.{}` is steered to an empty **list**.
-- **The default jsonic text matcher is disabled** (`text.lex: false`):
-  identifiers only ever appear as `.ident` / `.@"..."` and are produced by
-  `zonDot`. `true`/`false`/`null` still lex, because the text matcher
-  matches `value.def` entries even when text lexing is off.
-- **`zonNumber` owns every numeric token, including the leading `-` and
-  the `inf`/`nan` keywords.** jsonic's number lexer is switched off, so
-  nothing else will produce an `#NR`. It reproduces Zig's literal grammar
-  (base prefixes must be lowercase, `_` must sit between digits, no
-  leading zero, no `+`, hex floats via `p`), and returns a
-  `bigint`/`*big.Int` when a double would lose the exact integer value.
-- **`zonDocComment` runs at order 1.4e5, ahead of jsonic's comment
-  matcher (6e6).** It only ever *fails* the lex, on `//!` and `///`;
-  `////` and plain `//` fall through to the comment matcher.
-- **Duplicate field names are caught in `@pair-bc/prepend`,** which must
-  run before jsonic's own `@pair-bc` (that one performs the assignment,
-  so by `@pair-ac` the collision is gone). `/prepend` is available here
-  precisely because jsonic declares a *plain* `@pair-bc`; contrast
-  `@val-bc`, which it takes with `/replace`. Go state actions cannot
-  return an error token, so the Go side signals via `ctx.ParseErr`.
-- **Whitespace and comments may sit between `.` and what follows**
-  (`. foo`, `. {}`), because Zig's tokenizer emits them as separate
-  tokens. `skipInsigPos` tracks rows/columns across that gap so error
-  positions stay honest.
-- The Go plugin guards against re-invocation with a `zon-init`
-  decoration (jsonic `SetOptions` re-applies plugins); don't remove it.
+   `test/spec/*.tsv` fixtures, which both runtimes auto-discover.
+5. **Prefer a `test/spec/*.tsv` fixture** over an in-language assertion
+   whenever a case is expressible as `input -> JSON`. The in-language suite
+   keeps only what a fixture cannot express.
+6. **Every claim about the notation cites a PGN section.** If you cannot
+   name the section, the behaviour is a guess, and a guess does not belong
+   in a conformance parser. Where the standard is silent (the `[%…]` comment
+   markup), say so explicitly in the docs.
+7. Both `VERSION` constants (`ts/src/chess.ts`, `go/chess.go`) MUST equal
+   `ts/package.json` "version" — `ts/test/version.test.ts` and
+   `go/version_test.go` read that file and fail (never skip) on drift.
 
 ## Build & test
 
 TypeScript (from `ts/`):
 
 ```bash
-npm install            # auto-installs the @tabnas/jsonic + @tabnas/parser peers; resolves file: siblings
+npm install            # installs the @tabnas/parser peer
 npm run build          # node embed-grammar.js && tsc --build src test
 npm test               # node --enable-source-maps --test "dist-test/*.test.js"
+make diagram           # regenerate doc/grammar.{svg,txt} from the live grammar
 ```
-
-`npm run build` **embeds the grammar first** (into `src/zon.ts` and
-`go/zon.go`), then `tsc --build`s both `src` and `test` — the tests are
-written in TypeScript and compiled to `dist-test/`, unlike some sibling
-repos that ship committed `.test.js`. The grammar diagram is regenerated
-with `@tabnas/railroad` off the live config (`ts/doc/grammar.{svg,txt}`).
 
 Go (from `go/`):
 
 ```bash
 go build ./...
-go test -v ./...       # plugin parse cases + test/spec fixtures + the zig
-                       # reference corpora (TestMain generates them first)
+go test ./...          # the shared fixtures, plus a Go-side suite
 ```
 
-The zig reference corpora are generated automatically by both runtimes
-before they grade — `pretest` in `ts/`, `TestMain` in `go/`. Building them
-by hand, from the repo root:
+The repo-root [`Makefile`](Makefile) wraps both halves: `make build|test|
+clean` run the TS and Go sides, `make reset` rebuilds from clean,
+`make tags-go` lists `go/v*` tags, and `make publish-go V=x.y.z` injects V
+into the `const VERSION` in `go/chess.go`, commits and tags `go/vX.Y.Z`.
 
-```bash
-make corpus                    # == bash scripts/fetch-zigzon.sh
-                               # ~80MB download on first run, then cached
-```
+## Go-specific notes
 
-The repo-root [`Makefile`](Makefile) (adapted from voxgig/util) wraps
-both halves: `make build|test|clean` run the TS and Go sides, `make reset`
-rebuilds from clean, `make tags-go` lists `go/v*` tags, and
-`make publish-go V=x.y.z` injects `V` into the `const VERSION` in
-`go/zon.go`, commits, and tags `go/vX.Y.Z`. `make publish-ts` publishes
-the TS package at its `package.json` version. (`ts/Makefile` has most of the
-same targets scoped to the package — `publish-go`/`tags-go`/`tidy-go`/`reset`
-— but no `publish-ts`.)
+The model and the accepted notation are identical — that is what the
+shared fixtures pin. Four things differ because the languages do, and each
+is a trap if you forget it:
 
-## Composition test (@tabnas/debug)
+- **The database node is a `*Database`.** A Go slice is a value, so
+  `@gameitem-bc` appending to its inherited node would append to a copy.
+  `@pgn-bo` allocates a pointer for exactly this reason.
+- **`Game` embeds `Line` anonymously**, which is what makes the two
+  marshal to the same JSON object as the TypeScript `extends`.
+- **Boundary guards are code, not lookahead.** RE2 has no `(?!…)`, so the
+  PGN section 7 symbol-tail rule is the `endsToken` check the matcher runs
+  after the match, and `#SAN` / `#MVN` / `#RES` / `#NAG` are function-form
+  matchers (`Match.TokenFn`) rather than plain regexps because of it.
+- **Match-token matchers run in Tin-ascending order**, and tins are minted
+  in call order — so `j.Token("#RES")` MUST be called before
+  `j.Token("#MVN")`, or the `1` of `1-0` lexes as a move number. The
+  `TokenOrder` option says the same thing for the regexp-form entries.
 
-`ts/test/debug-model.test.ts` proves the plugin composes with the
-[`@tabnas/debug`](https://github.com/tabnas/debug) introspection plugin.
-`@tabnas/debug` is a `file:` devDependency, so plain `npm test` runs it;
-it resolves debug dynamically and **skips** when absent (set
-`TABNAS_DEBUG_PATH` to a built sibling checkout to force it). It asserts:
+## Not implemented
 
-- the structured rule set is `['elem','list','map','pair','val']`,
-- `m.config.start === 'val'` (note `config.start`, **not** `m.start`),
-- `Zon` is in `m.plugins`,
-- the push edges: `val` open-pushes both `map` **and** `list` (the
-  struct-vs-tuple disambiguation), `map`→`pair`, `list`→`elem`, and
-  `pair`/`elem` close-replace themselves to iterate members,
-- and that the model is JSON-serialisable and round-trips.
+Deliberate omissions, each argued in
+[`ts/doc/concepts.md`](ts/doc/concepts.md#3-trade-offs):
 
-There is no Go equivalent of this test; the Go suite is self-contained.
-
-## CI
-
-`.github/workflows/build.yml` has two jobs, neither publishing to npm:
-
-- **build** (Ubuntu/Windows/macOS, Node 24): sets
-  `git config --global core.autocrlf false` (CRLF would corrupt the
-  embedded grammar / line-sensitive sources), git-clones the tabnas
-  closure (`parser debug json abnf railroad jsonic`) as siblings, runs
-  `npm i && npm run build --if-present` for each (then `zon`), and
-  `npm test` here. Because `@tabnas/debug` is a devDependency, the
-  composition test runs as part of `npm test`.
-- **build-go** (Ubuntu/macOS, Go 1.24): clones the same siblings,
-  mirrors `admin/scripts/link.sh` by creating `vendor/` symlinks for any
-  `../vendor/` replaces and a `go work` over every non-vendor-replaced
-  module, then `go build` / `go test -v` here.
+- **Move legality.** No board, so no legality. `1. Qh8` parses.
+- **FEN and EPD as standalone documents** (sections 16.1, 16.2). The `FEN`
+  *tag* is read for its side-to-move and fullmove number; its value stays a
+  raw string.
+- **Non-standard tokens**: the `--` / `Z0` null move and the `(=)` draw
+  offer some tools emit. Accepting them would mean a `Move` with no piece.

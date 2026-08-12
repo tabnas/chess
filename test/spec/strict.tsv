@@ -1,63 +1,41 @@
 input	expected	opts
-# Inputs the Zig 0.16.0 reference implementation REJECTS. Every verdict here
-# was taken from `std.zig.Ast` + `std.zig.ZonGen` via the oracle in
-# scripts/fetch-zigzon.sh, not decided by this parser.
+# Import format vs export format, PGN spec 3 and 8.2.3.7.
 #
-# --- numeric literals -------------------------------------------------------
-+1	ERROR
-.5	ERROR
-5.	ERROR
-.0	ERROR
-0123	ERROR
-00	ERROR
-0012	ERROR
-0_1	ERROR
--0	ERROR
--0x0	ERROR
-1__0	ERROR
-1_	ERROR
-_1	ERROR
-1_.0	ERROR
-1._0	ERROR
-1.0_	ERROR
-0x_2A	ERROR
-0x1_	ERROR
-0X2A	ERROR
-0O52	ERROR
-0B101	ERROR
-0b12	ERROR
-0o18	ERROR
-0xg	ERROR
-1abc	ERROR
-1e	ERROR
-1e+	ERROR
-1e_1	ERROR
-0b1.1	ERROR
-0o1.1	ERROR
-0.1.2	ERROR
-1e5e5	ERROR
--nan	ERROR
--true	ERROR
-Inf	ERROR
-infinity	ERROR
-# --- doc comments -----------------------------------------------------------
-//! doc comment\n1	ERROR
-/// doc comment\n1	ERROR
-# --- identifiers ------------------------------------------------------------
-.@""	ERROR
-.a.b	ERROR
-# --- struct / tuple shape ---------------------------------------------------
-.{ .a = 1, .a = 2 }	ERROR
-.{\n    .name = 10,\n    .name = 20,\n}	ERROR
-.{.x=1.5, .x=2.5, .x=3.5}	ERROR
-.{,}	ERROR
-.{ .a = 1 .b = 2 }	ERROR
-.{ 1 2 }	ERROR
-{ a = 1 }	ERROR
-# --- character literals -----------------------------------------------------
-''	ERROR
-'ab'	ERROR
-'\\u{110000}'	ERROR
-# --- one value per document -------------------------------------------------
-1 2	ERROR
-"a" "b"	ERROR
+# Import format "is intentionally lax" (3.1) and is the default here.
+# `strict: true` demands the canonical export-format spelling (3.2).
+# Every row below appears twice: accepted lenient, rejected strict.
+#
+# --- 8.2.3.3: castling uses the letter O, not the digit zero ---
+0-0 *	[{"tags":{},"moves":[{"san":"0-0","piece":"K","castle":"king","number":1,"side":"w"}],"result":"*"}]
+0-0 *	ERROR	{"strict":true}
+0-0-0 *	[{"tags":{},"moves":[{"san":"0-0-0","piece":"K","castle":"queen","number":1,"side":"w"}],"result":"*"}]
+0-0-0 *	ERROR	{"strict":true}
+# --- 8.2.3.2: the pawn letter is not used in export format ---
+Pe4 *	[{"tags":{},"moves":[{"san":"Pe4","piece":"P","to":"e4","number":1,"side":"w"}],"result":"*"}]
+Pe4 *	ERROR	{"strict":true}
+# --- 8.2.3.3: promotion is written with an equal sign ---
+e8Q *	[{"tags":{},"moves":[{"san":"e8Q","piece":"P","to":"e8","promotion":"Q","number":1,"side":"w"}],"result":"*"}]
+e8Q *	ERROR	{"strict":true}
+# --- 8.2.3.8: export format converts suffix annotations to glyphs ---
+e4! *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","annotation":"!","number":1,"side":"w"}],"result":"*"}]
+e4! *	ERROR	{"strict":true}
+e4?? *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","annotation":"??","number":1,"side":"w"}],"result":"*"}]
+e4?? *	ERROR	{"strict":true}
+# --- 8.2.3.5: there is no marking for a double check ---
+e4++ *	[{"tags":{},"moves":[{"san":"e4++","piece":"P","to":"e4","check":"+","number":1,"side":"w"}],"result":"*"}]
+e4++ *	ERROR	{"strict":true}
+# --- 8.2.4: a glyph value is from zero to 255 ---
+e4 $999 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[999]}],"result":"*"}]
+e4 $999 *	ERROR	{"strict":true}
+e4 $255 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[255]}],"result":"*"}]
+e4 $255 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[255]}],"result":"*"}]	{"strict":true}
+# --- canonical SAN is accepted by both ---
+O-O *	[{"tags":{},"moves":[{"san":"O-O","piece":"K","castle":"king","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+O-O-O *	[{"tags":{},"moves":[{"san":"O-O-O","piece":"K","castle":"queen","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+e8=Q *	[{"tags":{},"moves":[{"san":"e8=Q","piece":"P","to":"e8","promotion":"Q","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+Qa6xb7# *	[{"tags":{},"moves":[{"san":"Qa6xb7#","piece":"Q","disambiguation":{"file":"a","rank":6},"capture":true,"to":"b7","check":"#","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+exd5 *	[{"tags":{},"moves":[{"san":"exd5","piece":"P","disambiguation":{"file":"e"},"capture":true,"to":"d5","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+Nbd7 *	[{"tags":{},"moves":[{"san":"Nbd7","piece":"N","disambiguation":{"file":"b"},"to":"d7","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
+# Neither format admits a move that is not a move.
+e9 *	ERROR
+e9 *	ERROR	{"strict":true}

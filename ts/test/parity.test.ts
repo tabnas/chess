@@ -1,11 +1,10 @@
-/* Copyright (c) 2025 Richard Rodger and other contributors, MIT License */
+/* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 
-// Cross-runtime conformance, driven by the shared `test/spec/*.tsv` fixtures
-// at the repo root — the same convention @tabnas/parser and @tabnas/abnf use
-// (see ../../test/AGENTS.md).
-//
-// `go/parity_test.go` discovers and runs the SAME files, so the two
-// implementations cannot drift without one of them going red.
+// Conformance, driven by the shared `test/spec/*.tsv` fixtures at the repo
+// root — the same convention @tabnas/parser and @tabnas/abnf use (see
+// ../../test/AGENTS.md). A fixture is the preferred home for any case
+// expressible as `input -> JSON`: it is the format a second runtime can
+// run unchanged.
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
@@ -13,8 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '../dist/zon'
+import { Chess } from '../dist/chess'
 
 // At runtime this file is loaded from `dist-test/`, so hop up one level to
 // reach the shared spec directory in the repo root.
@@ -22,8 +20,7 @@ const specDir = join(__dirname, '..', '..', 'test', 'spec')
 
 type SpecRow = { line: number; input: string; expected: string; opts: string }
 
-// Decode the escape set used in non-JSON columns. Kept byte-identical to the
-// Go loader so both runtimes feed the parser the exact same source text.
+// Decode the escape set used in non-JSON columns.
 function unescape(s: string): string {
   if (!s.includes('\\')) return s
   let out = ''
@@ -78,7 +75,7 @@ function runSpec(file: string) {
     for (const row of rows) {
       test(`row ${row.line}: ${label(row.input)}`, () => {
         const opts = '' === row.opts.trim() ? {} : JSON.parse(row.opts)
-        const tn = new Tabnas().use(jsonic).use(Zon, opts)
+        const tn = new Tabnas().use(Chess, opts)
 
         if (row.expected.startsWith('ERROR')) {
           const want = row.expected.slice('ERROR'.length).replace(/^:/, '')
@@ -97,8 +94,8 @@ function runSpec(file: string) {
         assert.notStrictEqual(raw, undefined,
           `${file}:${row.line}: no value; expected ${row.expected}`)
 
-        // Round-trip through JSON so null-prototype maps and numeric types
-        // compare structurally against the fixture's decoded shape.
+        // Round-trip through JSON so the fixture compares against the
+        // shape a consumer actually receives.
         const got = JSON.parse(JSON.stringify(raw))
         assert.deepStrictEqual(got, JSON.parse(row.expected),
           `${file}:${row.line}`)
@@ -107,8 +104,8 @@ function runSpec(file: string) {
   })
 }
 
-// Auto-discover every fixture: adding a .tsv runs it in both runtimes
-// without touching either runner.
+// Auto-discover every fixture: adding a .tsv runs it without touching the
+// runner, in this runtime and in any other that reads the same directory.
 for (const file of readdirSync(specDir).sort()) {
   if (file.endsWith('.tsv')) runSpec(file)
 }

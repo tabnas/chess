@@ -1,32 +1,30 @@
 {
-  "name": "@tabnas/zon",
-  "version": "0.5.2",
-  "description": "This plugin allows the [Tabnas](https://github.com/tabnas/parser) JSON parser to support Zig Object Notation (ZON) syntax.",
-  "main": "dist/zon.js",
+  "name": "@tabnas/chess",
+  "version": "0.1.0",
+  "description": "A Tabnas grammar plugin that parses chess notation: PGN games and the SAN moves inside them.",
+  "main": "dist/chess.js",
   "type": "commonjs",
-  "browser": "zon.min.js",
-  "types": "dist/zon.d.ts",
-  "homepage": "https://github.com/tabnas/zon",
+  "browser": "chess.min.js",
+  "types": "dist/chess.d.ts",
+  "homepage": "https://github.com/tabnas/chess",
   "keywords": [
-    "zon",
-    "zig",
+    "chess",
+    "pgn",
+    "san",
+    "notation",
     "tabnas",
-    "parser",
-    "object",
-    "json"
+    "parser"
   ],
   "author": "Richard Rodger (http://richardrodger.com)",
   "repository": {
     "type": "git",
-    "url": "git://github.com/tabnas/zon.git",
+    "url": "git://github.com/tabnas/chess.git",
     "directory": "ts"
   },
   "scripts": {
-    "corpus": "bash ../scripts/fetch-zigzon.sh",
-    "pretest": "npm run corpus",
     "test": "node --enable-source-maps --test \"dist-test/*.test.js\"",
     "test-some": "node --enable-source-maps --test-name-pattern=\"$npm_config_pattern\" --test \"dist-test/*.test.js\"",
-    "test-watch": "node --test --watch dist-test/zon.test.js",
+    "test-watch": "node --test --watch dist-test/chess.test.js",
     "embed": "node embed-grammar.js",
     "watch": "tsc --build src test -w",
     "build": "node embed-grammar.js && tsc --build src test",
@@ -34,11 +32,7 @@
     "reset": "npm run clean && npm i && npm run build && npm test",
     "repo-tag": "REPO_VERSION=`node -e \"console.log(require('./package').version)\"` && echo TAG: v$REPO_VERSION && git commit -a -m v$REPO_VERSION && git push && git tag v$REPO_VERSION && git push --tags;",
     "repo-publish": "npm run clean && npm i && npm run repo-publish-quick",
-    "repo-publish-quick": "npm run build && npm run test && npm run repo-tag && npm publish --access public --registry https://registry.npmjs.org ",
-    "repo-stage": "npm run clean && npm i && npm run repo-stage-quick",
-    "repo-stage-quick": "npm run build && npm run test && npm stage publish",
-    "repo-stage-list": "npm stage list",
-    "repo-stage-approve": "npm stage approve"
+    "repo-publish-quick": "npm run build && npm run test && npm run repo-tag && npm publish --access public --registry https://registry.npmjs.org "
   },
   "license": "MIT",
   "files": [
@@ -47,7 +41,6 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@tabnas/jsonic": ">=0",
     "@tabnas/parser": ">=0"
   },
   "devDependencies": {

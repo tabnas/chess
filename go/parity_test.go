@@ -1,125 +1,99 @@
-// Copyright (c) 2025 Richard Rodger and other contributors, MIT License
+/* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 
-package tabnaszon
-
-// parity_test.go — cross-runtime conformance, driven by the shared
-// `test/spec/*.tsv` fixtures at the repo root (see ../test/AGENTS.md), the
-// same convention @tabnas/parser and @tabnas/abnf use.
+// Cross-runtime conformance, driven by the shared `test/spec/*.tsv`
+// fixtures at the repo root (see ../test/AGENTS.md).
 //
-// ts/test/parity.test.ts discovers and runs the SAME files, so the two
+// `ts/test/parity.test.ts` discovers and runs the SAME files, so the two
 // implementations cannot drift without one of them going red.
 
+package tabnaschess
+
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
-
-	jsonic "github.com/tabnas/jsonic/go"
 )
 
+const specDir = "../test/spec"
+
 type specRow struct {
-	file     string
-	lineNo   int
+	line     int
 	input    string
 	expected string
 	opts     string
 }
 
-func specDir() string { return filepath.Join("..", "test", "spec") }
-
-// specUnescape decodes the escape set used in non-JSON columns. Kept
-// byte-identical to the TS loader so both runtimes feed the parser the exact
-// same source text.
-func specUnescape(s string) string {
+// Decode the escape set used in non-JSON columns. Kept byte-identical to
+// the TypeScript loader so both runtimes feed the parser the exact same
+// source text.
+func unescapeCol(s string) string {
 	if !strings.Contains(s, `\`) {
 		return s
 	}
-	var b strings.Builder
-	b.Grow(len(s))
+	var out strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c == '\\' && i+1 < len(s) {
+		if '\\' == c && i+1 < len(s) {
 			switch s[i+1] {
 			case 'n':
-				b.WriteByte('\n')
+				out.WriteByte('\n')
 				i++
 				continue
 			case 'r':
-				b.WriteByte('\r')
+				out.WriteByte('\r')
 				i++
 				continue
 			case 't':
-				b.WriteByte('\t')
+				out.WriteByte('\t')
 				i++
 				continue
 			case '\\':
-				b.WriteByte('\\')
+				out.WriteByte('\\')
 				i++
 				continue
 			}
 		}
-		b.WriteByte(c)
+		out.WriteByte(c)
 	}
-	return b.String()
+	return out.String()
 }
 
-func loadSpec(t *testing.T, path string) []specRow {
+func loadSpec(t *testing.T, file string) []specRow {
 	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open %s: %v", path, err)
+	body, err := os.ReadFile(filepath.Join(specDir, file))
+	if nil != err {
+		t.Fatalf("cannot read %s: %v", file, err)
 	}
-	defer f.Close()
+	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
 
-	var rows []specRow
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	lineNo := 0
-	for scanner.Scan() {
-		lineNo++
-		if lineNo == 1 {
-			continue // header naming the columns
-		}
-		// Strip the CR of a CRLF line: the TS loader splits on /\r?\n/ and
-		// drops it, so keeping it here would feed the runtimes different bytes.
-		line := strings.TrimSuffix(scanner.Text(), "\r")
+	rows := []specRow{}
+	// Line 1 is the header naming the columns.
+	for i := 1; i < len(lines); i++ {
+		raw := lines[i]
 		// A comment line starts with '#' and has no tab; a data row always
-		// has at least one (input + expected), so '#'-leading sources still
-		// work.
-		if line == "" || (strings.HasPrefix(line, "#") && !strings.Contains(line, "\t")) {
+		// has at least one, so a '#'-leading source still works.
+		if "" == raw || (strings.HasPrefix(raw, "#") && !strings.Contains(raw, "\t")) {
 			continue
 		}
-		cols := strings.Split(line, "\t")
-		if len(cols) < 2 {
-			t.Fatalf("%s:%d: expected at least 2 tab-separated columns", path, lineNo)
+		col := strings.Split(raw, "\t")
+		if 2 > len(col) {
+			t.Fatalf("%s:%d: expected at least 2 tab-separated columns", file, i+1)
 		}
-		row := specRow{
-			file:     filepath.Base(path),
-			lineNo:   lineNo,
-			input:    specUnescape(cols[0]),
-			expected: cols[1],
-		}
-		if 3 <= len(cols) {
-			row.opts = cols[2]
+		row := specRow{line: i + 1, input: unescapeCol(col[0]), expected: col[1]}
+		if 3 <= len(col) {
+			row.opts = col[2]
 		}
 		rows = append(rows, row)
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	if len(rows) == 0 {
-		t.Fatalf("%s: no cases", path)
 	}
 	return rows
 }
 
-// specLabel is a truncated single-line rendering of the input, so a failure
-// names its case readably.
-func specLabel(s string) string {
+// A truncated single-line rendering of the input, so a failure names its case.
+func label(s string) string {
 	one := strings.ReplaceAll(s, "\n", " ; ")
 	if 60 < len(one) {
 		return one[:57] + "..."
@@ -127,73 +101,97 @@ func specLabel(s string) string {
 	return one
 }
 
-// jsonRound normalises through JSON so *OrderedMap, map[string]any and the
-// fixture's decoded shape compare structurally.
-func jsonRound(t *testing.T, v any) any {
+// optionsFromJSON reads the fixture's `opts` column. The column is the
+// TypeScript plugin's option object, so the names are the TS ones.
+func optionsFromJSON(t *testing.T, raw string) Options {
 	t.Helper()
-	raw, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	if "" == strings.TrimSpace(raw) {
+		return Options{}
 	}
-	var out any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatalf("unmarshal %s: %v", raw, err)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); nil != err {
+		t.Fatalf("bad opts %q: %v", raw, err)
 	}
-	return out
+	return optionsFromMap(m)
 }
 
-func runSpecFile(t *testing.T, path string) {
-	for _, row := range loadSpec(t, path) {
-		t.Run(specLabel(row.input), func(t *testing.T) {
-			opts := map[string]any{}
-			if strings.TrimSpace(row.opts) != "" {
-				if err := json.Unmarshal([]byte(row.opts), &opts); err != nil {
-					t.Fatalf("%s:%d: bad opts JSON %q: %v", row.file, row.lineNo, row.opts, err)
-				}
-			}
+// parseWith runs the configured start rule and returns the result as the
+// generic JSON shape the fixture states, so the comparison is against what
+// a consumer actually receives.
+func parseWith(o Options, src string) (any, error) {
+	j := Make(o)
+	out, err := j.Parse(src)
+	if nil != err {
+		return nil, err
+	}
+	encoded, err := json.Marshal(out)
+	if nil != err {
+		return nil, err
+	}
+	var generic any
+	if err := json.Unmarshal(encoded, &generic); nil != err {
+		return nil, err
+	}
+	return generic, nil
+}
 
-			j := jsonic.Make()
-			if err := j.UseDefaults(Zon, Defaults, opts); err != nil {
-				t.Fatalf("plugin init: %v", err)
-			}
-			got, err := j.Parse(row.input)
+func TestSpec(t *testing.T) {
+	entries, err := os.ReadDir(specDir)
+	if nil != err {
+		t.Fatalf("cannot read %s: %v", specDir, err)
+	}
 
-			if strings.HasPrefix(row.expected, "ERROR") {
-				want := strings.TrimPrefix(strings.TrimPrefix(row.expected, "ERROR"), ":")
-				if err == nil {
-					t.Fatalf("%s:%d: expected error, got %v", row.file, row.lineNo, got)
-				}
-				if want != "" && !strings.Contains(err.Error(), want) {
-					t.Fatalf("%s:%d: expected error %q, got %q", row.file, row.lineNo, want, err.Error())
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("%s:%d: unexpected parse error: %v", row.file, row.lineNo, err)
-			}
+	files := []string{}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tsv") {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(files)
+	if 0 == len(files) {
+		t.Fatalf("no .tsv fixtures in %s", specDir)
+	}
 
-			var want any
-			if err := json.Unmarshal([]byte(row.expected), &want); err != nil {
-				t.Fatalf("%s:%d: bad expected JSON %q: %v", row.file, row.lineNo, row.expected, err)
+	for _, file := range files {
+		t.Run("spec: "+file, func(t *testing.T) {
+			rows := loadSpec(t, file)
+			if 0 == len(rows) {
+				t.Fatalf("%s: no cases", file)
 			}
-			if gotVal := jsonRound(t, got); !reflect.DeepEqual(gotVal, want) {
-				t.Errorf("%s:%d:\n  got  %#v\n  want %#v", row.file, row.lineNo, gotVal, want)
+			for _, row := range rows {
+				t.Run(label(row.input), func(t *testing.T) {
+					o := optionsFromJSON(t, row.opts)
+					got, err := parseWith(o, row.input)
+
+					if strings.HasPrefix(row.expected, "ERROR") {
+						want := strings.TrimPrefix(
+							strings.TrimPrefix(row.expected, "ERROR"), ":")
+						if nil == err {
+							t.Fatalf("%s:%d: expected %s, got %v",
+								file, row.line, row.expected, got)
+						}
+						if "" != want && !strings.Contains(err.Error(), want) {
+							t.Fatalf("%s:%d: expected error containing %q, got %v",
+								file, row.line, want, err)
+						}
+						return
+					}
+
+					if nil != err {
+						t.Fatalf("%s:%d: %v", file, row.line, err)
+					}
+
+					var want any
+					if err := json.Unmarshal([]byte(row.expected), &want); nil != err {
+						t.Fatalf("%s:%d: bad expected JSON: %v", file, row.line, err)
+					}
+					if !reflect.DeepEqual(got, want) {
+						gotJSON, _ := json.Marshal(got)
+						t.Fatalf("%s:%d:\n got: %s\nwant: %s",
+							file, row.line, gotJSON, row.expected)
+					}
+				})
 			}
 		})
-	}
-}
-
-// TestSpec auto-discovers every fixture: adding a .tsv runs it in both
-// runtimes without touching either runner.
-func TestSpec(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join(specDir(), "*.tsv"))
-	if err != nil {
-		t.Fatalf("glob spec dir: %v", err)
-	}
-	if len(files) == 0 {
-		t.Fatalf("no spec files under %s", specDir())
-	}
-	for _, path := range files {
-		t.Run(filepath.Base(path), func(t *testing.T) { runSpecFile(t, path) })
 	}
 }
