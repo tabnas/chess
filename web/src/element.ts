@@ -179,6 +179,12 @@ function unclosed(source: string): { char: string; row: number; col: number } | 
 
     if (inRemark) {
       /* rest-of-line comment: nothing in here is structure */
+    } else if ('%' === c && 1 === col) {
+      // PGN spec 6: a `%` in the FIRST column means the rest of the line is
+      // ignored, so a bracket in it is not a bracket. The lexer's escape
+      // matcher tests exactly this, and so must anything reading along
+      // behind it.
+      inRemark = true
     } else if (inComment) {
       if ('}' === c) {
         inComment = false

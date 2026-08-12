@@ -199,6 +199,24 @@ function kb(n) {
   return (n / 1024).toFixed(1) + ' kB'
 }
 
+/* The demo page, with the two substitutions that turn the source document
+ * into a served one.
+ *
+ * The source references `./dist/chess-view.js` so that opening demo.html
+ * straight from a checkout works; a served copy sits beside its bundle
+ * instead, and `script` says which bundle that is — the minified one for a
+ * release, the readable one while developing.
+ *
+ * The page doubles as the smoke test that the build's central claim holds:
+ * it loads that one script and nothing else.
+ */
+function page(script) {
+  return fs
+    .readFileSync(path.join(ROOT, 'demo.html'), 'utf8')
+    .replace('./dist/chess-view.js', './' + script)
+    .replace('<!--GRAMMAR-SVG-->', diagram())
+}
+
 /* The railroad diagram, inlined into the page at build time rather than
  * pasted into it.
  *
@@ -232,9 +250,22 @@ async function main() {
     void dev
     const ctx = await esbuild.context(options)
     await ctx.watch()
+
+    // Build the page here too, pointed at the readable bundle. Serving the
+    // repo root instead would hand over demo.html raw — with its script
+    // path aimed at a dist/chess-view.js that this branch never writes,
+    // and with the diagram still an unreplaced comment. What you developed
+    // against has to be the page, not a stripped copy of it.
+    const write = () => fs.writeFileSync(path.join(OUT, 'index.html'), page('chess-view.dev.js'))
+    write()
+    fs.watch(path.join(ROOT, 'demo.html'), { persistent: false }, write)
+
     if (serve) {
-      const { host, port } = await ctx.serve({ servedir: ROOT, port: 8000 })
-      console.log(`\n  demo: http://${'0.0.0.0' === host ? 'localhost' : host}:${port}/demo.html\n`)
+      // esbuild returns `hosts` (an array); `host` was the older single
+      // field, hence both — printing http://undefined:8000 helps nobody.
+      const { hosts, host, port } = await ctx.serve({ servedir: OUT, port: 8000 })
+      const where = host || (hosts || [])[0] || 'localhost'
+      console.log(`\n  demo: http://${'0.0.0.0' === where ? 'localhost' : where}:${port}/\n`)
     }
     return
   }
@@ -247,16 +278,7 @@ async function main() {
 
   declarations()
 
-  // The demo doubles as the smoke test that the built file really is
-  // self-contained: it loads chess-view.js and nothing else. It lives at
-  // the repo root so it works straight from a checkout, and is copied
-  // into dist/ with the script path rewritten so the built folder is a
-  // complete, uploadable site on its own.
-  const demo = fs.readFileSync(path.join(ROOT, 'demo.html'), 'utf8')
-  fs.writeFileSync(
-    path.join(OUT, 'index.html'),
-    demo.replace('./dist/chess-view.js', './chess-view.js').replace('<!--GRAMMAR-SVG-->', diagram()),
-  )
+  fs.writeFileSync(path.join(OUT, 'index.html'), page('chess-view.js'))
 
   report(integrity(['chess-view.js', 'chess-view.mjs', 'chess-view.dev.js']))
 }

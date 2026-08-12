@@ -157,12 +157,15 @@ The messages are the grammar's, not the engine's. `Chess` replaces the
 template for every code this grammar can reach, so they speak about chess
 notation instead of about character classes:
 
-| Code | Message |
-|---|---|
-| `unexpected` | not chess notation: `{src}` |
-| `unterminated_comment` | this comment is never closed |
-| `unterminated_string` | this tag value has no closing quote |
-| `unprintable` | a tag value cannot contain a line break |
+| Code | Raised when | Message |
+|---|---|---|
+| `unexpected` | the characters here are not a token any active rule accepts | not chess notation: `{src}` |
+| `unterminated_comment` | a `{` comment has no `}` | this comment is never closed |
+| `unterminated_string` | a tag value has no closing quote | this tag value has no closing quote |
+| `unprintable` | a tag value runs past the end of its line | a tag value cannot contain a line break |
+
+Those four are the whole set this grammar can reach. The engine still
+frames them — it names the file, row and column, and quotes the line.
 
 Each has a longer `hint` behind it, which the engine prints under the
 source excerpt. Both are set through the engine's own `error` and `hint`
@@ -339,17 +342,6 @@ as a railroad diagram in [`grammar.svg`](grammar.svg) and
 | `element` | a move, a move number, a glyph, a comment, or a variation |
 | `rav` | `( element-sequence )` |
 | `move` | an alternate entry point: one SAN move |
-
-### Errors
-
-Errors are the engine's, so they name the file, row and column, and quote
-the line. The codes you will see:
-
-| Code | Raised when |
-|---|---|
-| `unexpected` | the characters at this position are not a token any active rule accepts |
-| `unterminated_comment` | a `{` comment has no `}` |
-| `unterminated_string` | a tag value has no closing quote |
 
 ## Limits
 

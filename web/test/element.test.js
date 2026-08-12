@@ -281,6 +281,28 @@ describe('<chess-view> in a browser', { skip }, () => {
     assert.strictEqual(await box.textContent(), '')
   })
 
+  /* PGN spec 6: a `%` in the FIRST column means the rest of the line is
+   * ignored. A bracket in such a line is not a bracket, so the open-bracket
+   * hint must not claim one is waiting. */
+  test('a bracket on a %-escaped line is not an open bracket', async () => {
+    const notes = await page.evaluate(async () => {
+      const out = []
+      for (const src of ['% [ ignored\n1. e4 zz', '[Event "x" 1. e4 *']) {
+        const el = document.createElement('chess-view')
+        el.textContent = src
+        document.body.append(el)
+        await new Promise((r) => setTimeout(r, 50))
+        out.push(el.shadowRoot.querySelector('.note.bad').textContent)
+        el.remove()
+      }
+      return out
+    })
+    // The escaped bracket is invisible, so no "still open" clause...
+    assert.strictEqual(notes[0], '“zz” is not chess notation — line 2, column 7.')
+    // ...while a real unclosed tag still earns one.
+    assert.match(notes[1], /The tag opened at line 1, column 1 is still open\.$/)
+  })
+
   test('the switches each take a part of the UI away', async () => {
     const bare = page.locator('#game-diagram')
     await bare.locator('rect.sq').first().waitFor()

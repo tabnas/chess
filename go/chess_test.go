@@ -37,6 +37,23 @@ func TestPluginSurface(t *testing.T) {
 		}
 	})
 
+	// The plugin sets the error MESSAGES, which are the grammar's business.
+	// It must not set `color`, which is the engine's: a caller who installs
+	// Chess onto an engine they configured themselves keeps their choice.
+	// Make is where the colour gate belongs, because Make builds the engine.
+	t.Run("leaves a caller's colour choice alone", func(t *testing.T) {
+		on := true
+		j := tabnas.Make(tabnas.Options{Color: &tabnas.ColorOptions{Active: &on}})
+		if err := Chess(j, nil); nil != err {
+			t.Fatal(err)
+		}
+		if _, err := j.Parse("1. e4 zz"); nil == err {
+			t.Fatal("expected a parse error")
+		} else if !strings.Contains(err.Error(), "\x1b[") {
+			t.Errorf("the plugin overrode the caller's Color option: %q", err.Error())
+		}
+	})
+
 	t.Run("installs on a bare engine", func(t *testing.T) {
 		j := tabnas.Make()
 		if err := Chess(j, nil); nil != err {

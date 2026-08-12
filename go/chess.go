@@ -1378,17 +1378,6 @@ The tag pair is probably missing its closing quote, so the value ran on
 into the next line.`,
 		},
 
-		// Colour is for a terminal. The engine turns it on unconditionally,
-		// so piping a parse error into a file or a CI log wraps the message
-		// in escape codes. Gate it the way every other tool does.
-		//
-		// Set here rather than alongside Parse, which is where the
-		// TypeScript side gates it: there, a caller can hand-build the
-		// engine and pass their own `color`, so the plugin must not take it
-		// back. Here Make always builds a fresh engine, so this is the only
-		// place available. The observable behaviour is the same.
-		Color: &tabnas.ColorOptions{Active: boolPtr(colourActive())},
-
 		Rule: &tabnas.RuleOptions{Start: o.start()},
 	}
 
@@ -1461,7 +1450,15 @@ func Make(opts ...Options) *tabnas.Tabnas {
 	if 0 < len(opts) {
 		o = opts[0]
 	}
-	j := tabnas.Make()
+	// Colour is for a terminal, and the engine turns it on unconditionally,
+	// so piping a parse error into a file or a CI log wraps the message in
+	// escape codes. Gated here rather than in the plugin, and for the same
+	// reason ts/src/chess.ts gates it in parse(): Chess is exported and
+	// installs onto an engine the caller may already have configured, so a
+	// plugin must not take their `color` back. Make builds the engine, so
+	// the choice is Make's to make.
+	active := colourActive()
+	j := tabnas.Make(tabnas.Options{Color: &tabnas.ColorOptions{Active: &active}})
 	j.SetPluginOptions("chess", o.toMap())
 	if err := Chess(j, o.toMap()); nil != err {
 		panic(err)
