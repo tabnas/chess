@@ -2,11 +2,36 @@
   "name": "@tabnas/chess-game",
   "version": "0.1.0",
   "description": "A self-contained <chess-game> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
-  "main": "dist/chess-game.esm.js",
-  "module": "dist/chess-game.esm.js",
-  "unpkg": "dist/chess-game.js",
-  "jsdelivr": "dist/chess-game.js",
   "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/chess-game.d.ts",
+      "import": "./dist/chess-game.mjs",
+      "require": "./dist/chess-game.cjs",
+      "default": "./dist/chess-game.mjs"
+    },
+    "./engine": {
+      "types": "./dist/engine.d.ts",
+      "import": "./dist/engine.mjs",
+      "require": "./dist/engine.cjs",
+      "default": "./dist/engine.mjs"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/chess-game.cjs",
+  "module": "./dist/chess-game.mjs",
+  "types": "./dist/chess-game.d.ts",
+  "unpkg": "./dist/chess-game.js",
+  "jsdelivr": "./dist/chess-game.js",
+  "customElements": "custom-elements.json",
+  "sideEffects": [
+    "./src/index.ts",
+    "./dist/chess-game.js",
+    "./dist/chess-game.mjs",
+    "./dist/chess-game.cjs",
+    "./dist/chess-game.dev.js"
+  ],
   "homepage": "https://github.com/tabnas/chess",
   "keywords": [
     "chess",
@@ -26,6 +51,7 @@
   "files": [
     "src",
     "dist",
+    "custom-elements.json",
     "LICENSE"
   ],
   "scripts": {
@@ -35,6 +61,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "node --test test/*.test.js",
     "pretest": "npm run build",
+    "prepack": "npm run build",
     "clean": "rm -rf dist node_modules package-lock.json",
     "reset": "npm run clean && npm i && npm run build && npm test"
   },
@@ -42,6 +69,7 @@
     "@tabnas/chess": "file:../ts",
     "@tabnas/parser": "*",
     "@types/node": "25.6.0",
+    "dts-bundle-generator": "9.5.1",
     "esbuild": "0.28.2",
     "playwright-core": "^1.62.1",
     "typescript": "6.0.3"

@@ -48,6 +48,19 @@ interface Built {
   error?: string
 }
 
+/**
+ * The `detail` of the `chess-move` event, fired on every navigation.
+ *
+ * Exported because it is the one shape a consumer has to know: the event
+ * bubbles, so a listener anywhere on the page receives it.
+ */
+export interface ChessMoveDetail {
+  /** The move now shown, or `undefined` at the starting position. */
+  move?: Move
+  /** How far into the current line the view is; `0` is the start. */
+  ply: number
+}
+
 /* PGN spec 8.2.3.8 defines these six glyphs as exactly the traditional
  * suffix annotations, so showing the symbol is the standard's own
  * equivalence rather than an interpretation. Every other glyph stays `$n`:
@@ -219,7 +232,18 @@ const TEMPLATE = `
   </div>
 </div>`
 
-export class ChessGameElement extends HTMLElement {
+/* `class X extends HTMLElement` evaluates HTMLElement where the class is
+ * defined, not where it is instantiated — so on a server, merely importing
+ * this module would throw, and server-rendering frameworks import
+ * component packages on the server as a matter of course. A stand-in base
+ * makes the import harmless there. Registration is separately guarded, so
+ * nothing goes on to ask for a custom element registry that is not there. */
+const Base: typeof HTMLElement =
+  'undefined' === typeof HTMLElement
+    ? (class {} as unknown as typeof HTMLElement)
+    : HTMLElement
+
+export class ChessGameElement extends Base {
   static observedAttributes = ['orientation', 'game', 'ply']
 
   #root: ShadowRoot
@@ -375,12 +399,8 @@ export class ChessGameElement extends HTMLElement {
   #go(node: Node | undefined) {
     this.#node = node
     this.#draw()
-    this.dispatchEvent(
-      new CustomEvent('chess-move', {
-        detail: { move: node?.move, ply: this.ply },
-        bubbles: true,
-      }),
-    )
+    const detail: ChessMoveDetail = { move: node?.move, ply: this.ply }
+    this.dispatchEvent(new CustomEvent<ChessMoveDetail>('chess-move', { detail, bubbles: true }))
   }
 
   #draw() {

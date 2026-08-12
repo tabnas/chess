@@ -18,21 +18,42 @@ are bundled in, the styles are inline, and the board is inline SVG.
 
 ## Install
 
-Drop the built file on any page:
+### From a CDN
+
+One tag, nothing to build:
 
 ```html
-<script src="https://cdn.example.com/chess-game.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-game@0.1.0"></script>
+
+<chess-game>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-game>
 ```
 
-Or as a module:
+[unpkg](https://unpkg.com) serves the same file from
+`https://unpkg.com/@tabnas/chess-game@0.1.0`. Both resolve the bare
+package URL to `dist/chess-game.js`, the minified IIFE build.
+
+As a module, in a page or from an import map:
 
 ```html
-<script type="module">
-  import 'https://cdn.example.com/chess-game.esm.js'
-</script>
+<script type="module"
+  src="https://cdn.jsdelivr.net/npm/@tabnas/chess-game@0.1.0/dist/chess-game.mjs"></script>
 ```
 
-Or from a bundler:
+**Pin the version.** The examples above pin `@0.1.0`; the same URLs
+without it follow the latest release, which is convenient right up until
+it is not. And once pinned, a version is immutable on both CDNs, so it can
+be checked:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-game@0.1.0"
+        integrity="sha384-…" crossorigin="anonymous"></script>
+```
+
+Each release ships the hashes of the files it published, so the value for
+the version you pinned is at
+`https://cdn.jsdelivr.net/npm/@tabnas/chess-game@0.1.0/dist/sri.json`.
+
+### From npm
 
 ```bash
 npm install @tabnas/chess-game
@@ -42,6 +63,15 @@ npm install @tabnas/chess-game
 import '@tabnas/chess-game'
 ```
 
+The package has **no dependencies**: `@tabnas/chess` and the
+`@tabnas/parser` engine are bundled in, and so are the TypeScript
+declarations, so nothing else is installed to make either work.
+
+Both module systems are covered — `require('@tabnas/chess-game')` and
+`import '@tabnas/chess-game'` — and importing it on a server is safe:
+nothing touches the DOM until the element is registered, and registration
+is skipped where there is no custom element registry.
+
 Importing registers `<chess-game>`. To register it under a different name,
 import `define`:
 
@@ -49,6 +79,27 @@ import `define`:
 import { define } from '@tabnas/chess-game'
 define('pgn-viewer')
 ```
+
+### TypeScript
+
+The declarations ship with the package, and are wired into the editor's
+own model of HTML:
+
+```ts
+import '@tabnas/chess-game'
+
+const board = document.querySelector('chess-game') // ChessGameElement
+board?.goto(3)
+
+document.addEventListener('chess-move', (e) => {
+  e.detail.move?.san // string | undefined
+})
+```
+
+`custom-elements.json` — a [custom elements
+manifest](https://github.com/webcomponents/custom-elements-manifest) — is
+published too, so editors that read it complete the tag, its attributes,
+its CSS parts and its custom properties in plain HTML and CSS as well.
 
 ## Use
 
@@ -96,6 +147,19 @@ so on — or `undefined` at the starting position.
 | `el.goto(n)` | Show the `n`th move of the current line. |
 | `el.load()` | Re-read the text content. Called automatically on change. |
 
+### The board, without the element
+
+The replay half is a subpath of its own, with no DOM in it — for working
+out positions on a server, in a worker, or in a test:
+
+```js
+import { startPosition, legalMoves, resolve, applyMove } from '@tabnas/chess-game/engine'
+
+const pos = startPosition()
+legalMoves(pos).length              // => 20
+applyMove(pos, resolve(pos, { san: 'e4', piece: 'P', to: 'e4' })).turn  // => 'b'
+```
+
 ### Styling
 
 Everything is a custom property, set on the element or inherited:
@@ -109,9 +173,10 @@ chess-game {
 }
 ```
 
-The full list is at the top of [`src/style.ts`](src/style.ts). The shadow
-root also exposes `::part(board)`, `::part(notation)`, `::part(moves)`,
-`::part(controls)` and `::part(wrap)`.
+The full list is at the top of [`src/style.ts`](src/style.ts), and in
+[`custom-elements.json`](custom-elements.json) with a description of each.
+The shadow root also exposes `::part(board)`, `::part(notation)`,
+`::part(moves)`, `::part(controls)` and `::part(wrap)`.
 
 ## Build
 
@@ -122,18 +187,33 @@ npm start              # serve the demo with rebuild-on-save
 npm test               # engine tests, then the component in Chromium
 ```
 
-`build.js` produces four files:
+`build.js` produces:
 
 | File | Format | For |
 |---|---|---|
 | `chess-game.js` | IIFE, minified | a `<script src>` tag or a CDN |
-| `chess-game.esm.js` | ESM, minified | a bundler, or `<script type="module">` |
+| `chess-game.mjs` | ESM, minified | `import`, bundlers, `<script type="module">` |
+| `chess-game.cjs` | CJS, minified | `require` |
 | `chess-game.dev.js` | IIFE, readable, sourcemapped | debugging |
-| `engine.cjs` | CJS | replaying a game with no DOM |
+| `engine.cjs`, `engine.mjs` | CJS and ESM | replaying a game with no DOM |
+| `chess-game.d.ts`, `engine.d.ts` | declarations | TypeScript |
 
-…plus `index.html`, the demo, so `dist/` is a complete site you can upload
-as it stands. About 95 kB minified, 34 kB over the wire — most of which is
-the parser engine.
+The extensions are load-bearing rather than decorative. Node decides a
+file's module format from its extension and the nearest package.json
+`type`, so an ES module named `.js` in a `"type": "commonjs"` package is a
+syntax error on `require` *and* on `import` — a way to publish a package
+nobody can load. `.mjs` and `.cjs` say which is which outright.
+
+…plus `sri.json`, the integrity hashes, and `index.html`, the demo — so
+`dist/` is a complete site you can upload as it stands. About 95 kB
+minified, 34 kB over the wire, most of which is the parser engine.
+
+The declarations are bundled the same way the code is: `el.move` is a
+`Move` from `@tabnas/chess`, and a `.d.ts` that said so by importing it
+would make a zero-dependency package need a dependency in order to
+typecheck. `build.js` inlines every type the public surface reaches, then
+typechecks the result — a declaration that fails does so in the consumer's
+build, which is far too late to find out.
 
 ## What this is, and what the parser is
 

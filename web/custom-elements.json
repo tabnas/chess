@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "2.1.0",
+  "readme": "README.md",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "dist/chess-game.mjs",
+      "declarations": [
+        {
+          "kind": "class",
+          "customElement": true,
+          "tagName": "chess-game",
+          "name": "ChessGameElement",
+          "description": "A chessboard view of a PGN game. The game is the element's text content, so the markup is the notation and nothing else.",
+          "summary": "A 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
+          "superclass": { "name": "HTMLElement" },
+          "attributes": [
+            {
+              "name": "orientation",
+              "description": "Which side is at the bottom of the board.",
+              "type": { "text": "'white' | 'black'" },
+              "default": "'white'"
+            },
+            {
+              "name": "game",
+              "description": "Which game of a multi-game database to show, counting from 0.",
+              "type": { "text": "number" },
+              "default": "0"
+            },
+            {
+              "name": "ply",
+              "description": "Which move to open at. 0 is the starting position.",
+              "type": { "text": "number" },
+              "default": "0"
+            },
+            {
+              "name": "theme",
+              "description": "'auto' follows prefers-color-scheme; 'dark' forces the dark palette.",
+              "type": { "text": "'auto' | 'dark'" },
+              "default": "'auto'"
+            }
+          ],
+          "members": [
+            {
+              "kind": "field",
+              "name": "move",
+              "readonly": true,
+              "description": "The move currently shown, or undefined at the starting position.",
+              "type": { "text": "Move | undefined" }
+            },
+            {
+              "kind": "field",
+              "name": "ply",
+              "readonly": true,
+              "description": "How far into the current line the view is; 0 is the start.",
+              "type": { "text": "number" }
+            },
+            {
+              "kind": "method",
+              "name": "goto",
+              "description": "Show the nth move of the current line. 0 is the starting position.",
+              "parameters": [{ "name": "n", "type": { "text": "number" } }],
+              "return": { "type": { "text": "void" } }
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "description": "Re-read the text content and rebuild. Called automatically on change.",
+              "return": { "type": { "text": "void" } }
+            }
+          ],
+          "events": [
+            {
+              "name": "chess-move",
+              "description": "Fired on every navigation, and bubbles. `detail` is `{ move, ply }`.",
+              "type": { "text": "CustomEvent<ChessMoveDetail>" }
+            }
+          ],
+          "cssParts": [
+            { "name": "wrap", "description": "The outermost container." },
+            { "name": "board", "description": "The board and its coordinates." },
+            { "name": "controls", "description": "The navigation button bar." },
+            { "name": "notation", "description": "The side panel: tags, moves and status." },
+            { "name": "moves", "description": "The move list alone." }
+          ],
+          "cssProperties": [
+            { "name": "--size", "description": "Board width.", "default": "24rem" },
+            { "name": "--radius", "description": "Corner radius.", "default": "6px" },
+            { "name": "--font", "description": "UI font stack." },
+            { "name": "--mono", "description": "Font for the notation." },
+            { "name": "--glyphs", "description": "Font stack for the chess piece glyphs." },
+            { "name": "--board-light", "description": "Light square colour.", "default": "#f0d9b5" },
+            { "name": "--board-dark", "description": "Dark square colour.", "default": "#b58863" },
+            { "name": "--board-from", "description": "Origin square of the move just played.", "default": "#f7d64b" },
+            { "name": "--board-to", "description": "Destination square of the move just played.", "default": "#f7d64b" },
+            { "name": "--board-check", "description": "Square of a king in check.", "default": "#d64435" },
+            { "name": "--piece-light", "description": "Fill for White's pieces.", "default": "#fffef8" },
+            { "name": "--piece-dark", "description": "Fill for Black's pieces.", "default": "#2b2724" },
+            { "name": "--piece-edge", "description": "Piece outline.", "default": "#2b2724" },
+            { "name": "--fg", "description": "Text colour.", "default": "#1c1a18" },
+            { "name": "--muted", "description": "Secondary text colour.", "default": "#6b6560" },
+            { "name": "--bg", "description": "Component background.", "default": "#fbfaf8" },
+            { "name": "--panel", "description": "Notation panel background.", "default": "#ffffff" },
+            { "name": "--line", "description": "Border and rule colour.", "default": "#e2ddd6" },
+            { "name": "--accent", "description": "The highlighted move.", "default": "#2f6f4e" },
+            { "name": "--accent-fg", "description": "Text on the accent colour.", "default": "#ffffff" },
+            { "name": "--bad", "description": "Error text and markers.", "default": "#a3251b" }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "custom-element-definition",
+          "name": "chess-game",
+          "declaration": { "name": "ChessGameElement", "module": "dist/chess-game.mjs" }
+        },
+        {
+          "kind": "js",
+          "name": "ChessGameElement",
+          "declaration": { "name": "ChessGameElement", "module": "dist/chess-game.mjs" }
+        },
+        {
+          "kind": "js",
+          "name": "define",
+          "declaration": { "name": "define", "module": "dist/chess-game.mjs" }
+        }
+      ]
+    }
+  ]
+}

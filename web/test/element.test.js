@@ -212,3 +212,79 @@ describe('<chess-game> in a browser', { skip }, () => {
     assert.match(await note.textContent(), /unexpected/)
   })
 })
+
+/* The other way a page loads this: as a module, from a URL.
+ *
+ * Over http rather than file://, because that is what a CDN is, and
+ * because a browser refuses a module script from a file:// origin. The
+ * suite above proves the IIFE build registers the element; this proves
+ * the ESM build does, which is the half a bundler and a
+ * <script type="module"> both take.
+ */
+describe('<chess-game> as an ES module over http', { skip }, () => {
+  const DIST = path.join(__dirname, '..', 'dist')
+  // The empty data: icon is not decoration. Without it the browser asks
+  // for /favicon.ico of its own accord, which is a 404 in the console and
+  // a third request in a test that counts them.
+  const PAGE = `<!doctype html><meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module" src="./chess-game.mjs"></script>
+<chess-game>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-game>`
+
+  const TYPES = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.html': 'text/html' }
+
+  let browser
+  let page
+  let server
+  let origin
+  const errors = []
+
+  before(async () => {
+    server = require('node:http').createServer((req, res) => {
+      const url = req.url.split('?')[0]
+      if ('/' === url) {
+        res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE)
+        return
+      }
+      const file = path.join(DIST, path.normalize(url).replace(/^(\.\.[/\\])+/, ''))
+      if (!file.startsWith(DIST) || !fs.existsSync(file)) {
+        res.writeHead(404).end()
+        return
+      }
+      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' })
+      res.end(fs.readFileSync(file))
+    })
+    await new Promise((done) => server.listen(0, '127.0.0.1', done))
+    origin = `http://127.0.0.1:${server.address().port}`
+
+    browser = await chromium.launch({ executablePath })
+    page = await browser.newPage()
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => {
+      if ('error' === m.type()) errors.push(m.text())
+    })
+    await page.goto(origin + '/')
+    await page.waitForFunction(() => !!customElements.get('chess-game'))
+  })
+
+  after(async () => {
+    await browser?.close()
+    await new Promise((done) => server.close(done))
+  })
+
+  test('the module registers the element and draws a board', async () => {
+
+    assert.deepStrictEqual(errors, [])
+    assert.strictEqual(await page.locator('chess-game rect.sq').count(), 64)
+    assert.strictEqual(await page.locator('chess-game text.pc').count(), 32)
+  })
+
+  test('it is still self-contained: the page and the module, nothing else', async () => {
+
+    const fetched = []
+    page.on('request', (r) => fetched.push(r.url().replace(origin, '')))
+    await page.reload()
+    await page.waitForFunction(() => !!customElements.get('chess-game'))
+    assert.deepStrictEqual(fetched, ['/', '/chess-game.mjs'])
+  })
+})
