@@ -13,12 +13,14 @@ on:
   push:
     tags:
       - 'ts/v*'
+      - 'web/v*'
 
 permissions:
   contents: read
 
 jobs:
   publish-npm:
+    if: startsWith(github.ref, 'refs/tags/ts/v')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -35,4 +37,33 @@ jobs:
           npm install -g npm@latest
           npm i
           npm run build --if-present
+          npm publish --access public
+
+  # @tabnas/chess-game, the bundled <chess-game> web component in web/.
+  # It carries its own version line and its own tag (`web/v*`) rather than
+  # riding the library's: it is a built artifact whose contents change when
+  # the BUNDLE changes — a new parser, a board fix — which is not the same
+  # event as a grammar release. admin/publish.sh therefore covers ts/ and
+  # go/ only, and this job is how the component ships.
+  publish-web:
+    if: startsWith(github.ref, 'refs/tags/web/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Build the library the component bundles
+        working-directory: ts
+        run: npm i && npm run build
+      - name: Build and publish the component (OIDC trusted publishing)
+        working-directory: web
+        run: |
+          npm install -g npm@latest
+          npm i
+          npm run build
           npm publish --access public
