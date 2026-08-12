@@ -23,35 +23,35 @@ are bundled in, the styles are inline, and the board is inline SVG.
 One tag, nothing to build:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"></script>
 
 <chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>
 ```
 
 [unpkg](https://unpkg.com) serves the same file from
-`https://unpkg.com/@tabnas/chess-view@0.1.2`. Both resolve the bare
+`https://unpkg.com/@tabnas/chess-view@0.1.3`. Both resolve the bare
 package URL to `dist/chess-view.js`, the minified IIFE build.
 
 As a module, in a page or from an import map:
 
 ```html
 <script type="module"
-  src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.2/dist/chess-view.mjs"></script>
+  src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3/dist/chess-view.mjs"></script>
 ```
 
-**Pin the version.** The examples above pin `@0.1.2`; the same URLs
+**Pin the version.** The examples above pin `@0.1.3`; the same URLs
 without it follow the latest release, which is convenient right up until
 it is not. And once pinned, a version is immutable on both CDNs, so it can
 be checked:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.2"
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"
         integrity="sha384-…" crossorigin="anonymous"></script>
 ```
 
 Each release ships the hashes of the files it published, so the value for
 the version you pinned is at
-`https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.2/dist/sri.json`.
+`https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3/dist/sri.json`.
 
 ### From npm
 
@@ -266,6 +266,32 @@ board.source = undefined      // and hand it back to the text content
 Changing the text content from outside always wins: it is a new game, and
 supersedes whatever the editor holds.
 
+### When the notation is wrong
+
+Two different failures, reported differently.
+
+**Bad notation** is a parse error, and the message is built to be read
+rather than debugged. `@tabnas/chess` supplies the chess vocabulary — the
+grammar replaces the engine's wording for every error code it can reach —
+and the component adds what only it can see: where you are looking, the
+whole word rather than the one character the lexer stopped on, and the
+bracket you left open.
+
+| Notation | Message |
+|---|---|
+| `1. e4 zz` | “zz” is not chess notation — line 1, column 7. |
+| `1. e4 (e5` | The notation ends before the variation opened at line 1, column 7 is closed. |
+| `1. e4 {oops` | This comment is never closed — line 1, column 7. |
+
+**Good notation that is not a legal move** is the other one, and it stops
+its line rather than the whole game: `3. Qxh8` is a well-formed move, and
+whether a queen can reach h8 is a question only a board can answer. The
+move is marked and the reason given.
+
+Either way the message lands in `::part(status)`, which sits outside the
+notation panel — so `notation="hidden"` leaves a board with an
+explanation rather than a board that is silently empty.
+
 ### The board, without the element
 
 The replay half is a subpath of its own, with no DOM in it — for working
@@ -296,7 +322,8 @@ The full list is at the top of [`src/style.ts`](src/style.ts), and in
 [`custom-elements.json`](custom-elements.json) with a description of each.
 The shadow root also exposes `::part(wrap)`, `::part(board)`,
 `::part(controls)`, `::part(notation)`, `::part(moves)`,
-`::part(commentary)`, `::part(source)` and `::part(editor)`.
+`::part(commentary)`, `::part(status)`, `::part(source)` and
+`::part(editor)`.
 
 ## Build
 

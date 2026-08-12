@@ -199,6 +199,25 @@ function kb(n) {
   return (n / 1024).toFixed(1) + ' kB'
 }
 
+/* The railroad diagram, inlined into the page at build time rather than
+ * pasted into it.
+ *
+ * It is generated from the live grammar by @tabnas/railroad (`make
+ * diagram`), so a copy sitting in demo.html would be a copy that goes
+ * quietly out of date the first time a rule changes. Inlining also keeps
+ * the page's promise: one document, one script, no other requests.
+ */
+function diagram() {
+  const svg = path.join(ROOT, '..', 'ts', 'doc', 'grammar.svg')
+  if (!fs.existsSync(svg)) {
+    // A checkout without the generated diagram still builds a working page.
+    console.warn(`  note: ${path.relative(ROOT, svg)} is missing; linking to it instead`)
+    return '<p><a href="https://github.com/tabnas/chess/blob/main/ts/doc/grammar.svg">' +
+      'Railroad diagram</a></p>'
+  }
+  return fs.readFileSync(svg, 'utf8').trim()
+}
+
 async function main() {
   const watch = process.argv.includes('--watch')
   const serve = process.argv.includes('--serve')
@@ -236,7 +255,7 @@ async function main() {
   const demo = fs.readFileSync(path.join(ROOT, 'demo.html'), 'utf8')
   fs.writeFileSync(
     path.join(OUT, 'index.html'),
-    demo.replace('./dist/chess-view.js', './chess-view.js'),
+    demo.replace('./dist/chess-view.js', './chess-view.js').replace('<!--GRAMMAR-SVG-->', diagram()),
   )
 
   report(integrity(['chess-view.js', 'chess-view.mjs', 'chess-view.dev.js']))

@@ -3,48 +3,197 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>&lt;chess-view&gt;</title>
+<title>Chess notation, parsed — tabnas</title>
+<meta name="description" content="A worked example of a tabnas grammar: PGN chess notation, parsed by a rule table that is data rather than code, in TypeScript and Go from one source.">
 
 <!-- The whole component. One file, no other requests: @tabnas/chess and
      the @tabnas/parser engine are bundled in, the board is inline SVG. -->
 <script src="./dist/chess-view.js"></script>
 
 <style>
-  :root { color-scheme: light dark; }
+  /* The tabnas palette — deep monastery green, illuminated gold, warm
+     parchment — taken from tabnas.dev's design tokens. The display and
+     heading faces there are webfonts; this page is deliberately one file
+     and no external requests, so it uses their documented fallbacks
+     instead of loading them. */
+  :root {
+    color-scheme: light dark;
+
+    --green-950: #0b2d1a; --green-900: #0e3320; --green-800: #123c24;
+    --green-700: #14512e; --green-300: #82b89b; --green-200: #b9d7c6;
+    --gold-700: #9e7720;  --gold-500: #cb9e3e;  --gold-300: #e6cd8b;
+    --parch-50: #fdfbf3;  --parch-100: #faf6ea; --parch-200: #f7eed4;
+
+    --bg: var(--parch-100);
+    --surface: var(--parch-50);
+    --ink: var(--green-800);
+    --ink-soft: #3a4a3f;
+    --ink-mute: #6a7269;
+    --primary: var(--green-700);
+    --accent: var(--gold-700);
+    --rule: #ddd0af;
+    --code-bg: var(--parch-200);
+
+    --font-heading: "Cormorant Garamond", Georgia, serif;
+    --font-body: Atkinson, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--green-950);
+      --surface: var(--green-800);
+      --ink: #f1e8cd;
+      --ink-soft: #cdbf98;
+      --ink-mute: #9aa79b;
+      --primary: var(--green-300);
+      --accent: var(--gold-300);
+      --rule: #29452f;
+      --code-bg: var(--green-900);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
   body {
-    max-width: 60rem;
-    margin: 0 auto;
-    padding: 2rem 1rem 6rem;
-    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.65;
   }
-  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
-  h2 { font-size: 1.05rem; margin: 2.5rem 0 0.5rem; }
-  p { color: #666; max-width: 42rem; }
-  @media (prefers-color-scheme: dark) { p { color: #999; } }
-  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+
+  .wrap { max-width: 54rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  a { color: var(--primary); text-underline-offset: 2px; }
+  a:hover { color: var(--accent); }
+
+  /* --- masthead ------------------------------------------------------ */
+
+  header.top {
+    border-bottom: 1px solid var(--rule);
+    background: linear-gradient(180deg, var(--surface), transparent);
+  }
+  .brand {
+    display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap;
+    padding: 1.5rem 0 0.25rem;
+  }
+  .brand b {
+    font-family: var(--font-heading);
+    font-size: 1.9rem; font-weight: 600; letter-spacing: 0.01em;
+  }
+  .motto {
+    color: var(--ink-mute); font-family: var(--font-heading);
+    font-style: italic; font-size: 1.05rem;
+  }
+  .tagline { color: var(--ink-soft); margin: 0 0 1.5rem; max-width: 40rem; }
+
+  h1 {
+    font-family: var(--font-heading);
+    font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15;
+    font-weight: 600; margin: 2rem 0 0.5rem;
+  }
+  h2 {
+    font-family: var(--font-heading);
+    font-size: 1.6rem; font-weight: 600;
+    margin: 3.5rem 0 0.35rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+  }
+  h3 { font-size: 1.05rem; margin: 2rem 0 0.35rem; }
+  h2 + p, h1 + p, h3 + p { margin-top: 0.35rem; }
+  p { max-width: 40rem; }
+  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 40rem; }
+
+  code, pre { font-family: var(--font-mono); font-size: 0.85em; }
+  :not(pre) > code {
+    background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px;
+  }
   pre {
-    background: #8881; padding: 0.75rem 1rem; border-radius: 6px;
-    overflow-x: auto;
+    background: var(--code-bg); color: var(--ink);
+    padding: 0.9rem 1.1rem; border-radius: 6px;
+    border: 1px solid var(--rule);
+    overflow-x: auto; line-height: 1.55;
   }
-  chess-view { margin: 0.75rem 0; }
+  pre .c { color: var(--ink-mute); font-style: italic; }
+  pre .k { color: var(--accent); }
+
+  .cols { display: grid; gap: 1.25rem; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 44rem) { .cols { grid-template-columns: 1fr; } }
+  .cols h3 { margin-top: 0; }
+
+  chess-view { margin: 1.25rem 0; --size: 22rem; }
+  /* The error demos are about the message, not the board: the position
+     never changes, so the board is a token that the component still
+     renders rather than the thing being shown. */
+  .errdemo chess-view { --size: 9rem; }
+
+  figure { margin: 1.5rem 0; }
+  figcaption {
+    color: var(--ink-mute); font-size: 0.88rem; margin-top: 0.5rem;
+    max-width: 40rem;
+  }
+
+  .diagram {
+    background: #fff; border: 1px solid var(--rule); border-radius: 6px;
+    padding: 0.5rem; overflow-x: auto;
+  }
+  .diagram svg { display: block; max-width: none; }
+
+  .cards { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); margin: 1.5rem 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 0.9rem 1.1rem;
+  }
+  .card h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  .card p { margin: 0; font-size: 0.92rem; color: var(--ink-soft); }
+
+  .pill {
+    display: inline-block; font-family: var(--font-mono); font-size: 0.78rem;
+    background: var(--code-bg); border: 1px solid var(--rule);
+    border-radius: 999px; padding: 0.1rem 0.6rem; margin-right: 0.3rem;
+  }
+
+  footer {
+    margin-top: 4rem; border-top: 1px solid var(--rule);
+    padding: 1.5rem 0 4rem; color: var(--ink-mute); font-size: 0.9rem;
+  }
+  footer a { margin-right: 1rem; }
+
+  /* Until the component is defined the browser shows its text content —
+     a line of PGN where the board is going to be. See web/README.md. */
+  chess-view:not(:defined) {
+    display: block; visibility: hidden; min-height: var(--size, 22rem);
+  }
 </style>
 </head>
 <body>
 
-<h1>&lt;chess-view&gt;</h1>
-<p>
-  A chessboard view of a PGN game. The notation is the element's text
-  content — there is no other markup and no configuration.
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <b>tabnas</b>
+      <span class="motto">Tábla na nAistrithe</span>
+    </div>
+    <p class="tagline">
+      An extensible parsing engine, and a compile target for agents.
+      This page is one grammar, taken apart.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+<h1>Chess notation, parsed</h1>
+<p class="lede">
+  Everything below is driven by a single grammar for
+  <abbr title="Portable Game Notation">PGN</abbr> — the notation chess games
+  have been recorded in since 1994. The board is not the point. The point is
+  what it takes to teach a parser a new language, and how little that turns
+  out to be.
 </p>
 
-<pre>&lt;script src="chess-view.js"&gt;&lt;/script&gt;
-
-&lt;chess-view&gt;1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2&lt;/chess-view&gt;</pre>
-
-<h2>A whole game</h2>
-<p>Use the buttons, the arrow keys, or click any move in the notation.</p>
-
-<chess-view>
+<chess-view id="game-fischer">
 [Event "F/S Return Match"]
 [Site "Belgrade, Serbia JUG"]
 [Date "1992.11.04"]
@@ -61,56 +210,194 @@ f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
 40. Rd6 Kc5 41. Ra6 Nf2 42. g4 Bd3 43. Re6 1/2-1/2
 </chess-view>
 
-<h2>Annotations</h2>
 <p>
-  Comments, glyphs and variations all show in the notation. Clicking a move
-  inside a variation follows that variation — the arrow keys then walk it
-  rather than the mainline.
+  The markup for that is one tag with the game inside it. There is no
+  configuration, no JSON, and no second file.
 </p>
 
-<chess-view orientation="black">
-[Event "Immortal Game"]
-[White "Anderssen, Adolf"]
-[Black "Kieseritzky, Lionel"]
-[Date "1851.06.21"]
-[Result "1-0"]
+<pre><span class="c">&lt;!-- one script, no dependencies, no second request --&gt;</span>
+&lt;script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"&gt;&lt;/script&gt;
 
-1. e4 e5 2. f4 {The King's Gambit: sharp, and out of fashion for a century.}
-exf4 3. Bc4 Qh4+ 4. Kf1 b5 $6 {The Bryan Counter-gambit.} (4... d6 {is the
-modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
-10. g4 Nf6 11. Rg1 $1 {A rook offered, and the attack begins.} cxb5 12. h4 Qg6
-13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 $3 Qxb2 18. Bd6 $3 Bxg1
-19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ $1 Nxf6 23. Be7# 1-0
-</chess-view>
+&lt;<span class="k">chess-view</span>&gt;1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2&lt;/<span class="k">chess-view</span>&gt;</pre>
 
-<h2>A study, from a set position</h2>
+<h2>A grammar is a table, not a program</h2>
 <p>
-  A <code>FEN</code> tag says where play starts, so the move numbers and
-  the side to move come from the game rather than from move one.
+  This is the part worth carrying away. A tabnas grammar is <em>data</em>: a
+  table saying, for each rule, which token opens which alternative and what
+  to do about it. Nobody generates a parser, and nobody writes a
+  recursive-descent function by hand.
+</p>
+<p>
+  Here is the whole of the rule that reads one element of a game — a move, a
+  move number, a glyph, a comment, or a nested variation:
 </p>
 
-<chess-view theme="dark">
-[SetUp "1"]
-[FEN "8/6P1/8/8/8/1k6/8/K7 w - - 0 51"]
+<pre><span class="c"># A movetext element (PGN spec 8.2).</span>
+rule: element: open: [
+  { s: <span class="k">'#SAN'</span> a: '@move'          g: 'elem,move' }
+  { s: <span class="k">'#MVN'</span> a: '@number'        g: 'elem,number' }
+  { s: <span class="k">'#NAG'</span> a: '@nag'           g: 'elem,nag' }
+  { s: <span class="k">'#CMT'</span> a: '@brace-comment' g: 'elem,comment' }
+  { s: <span class="k">'#RMK'</span> a: '@line-comment'  g: 'elem,comment' }
+  { s: <span class="k">'#OP'</span>  p: rav b: 1 u: { rav: true } g: 'elem,rav' }
+]
+rule: element: close: [
+  { s: '#ELEM' r: element b: 1 g: 'elem,next' }   <span class="c"># another element</span>
+  { s: '#EEND' b: 1 g: 'elem,end' }               <span class="c"># hand back up</span>
+]</pre>
 
-51. g8=Q+ {The pawn queens with check along the long diagonal.} Kb4
-52. Qb8+ Ka4 53. Qb2 {The queen cuts the king off; the white king walks up.} 1-0
-</chess-view>
-
-<h2>Bare movetext</h2>
-<p>No tag pairs, no result marker. Import format is lax and so is this.</p>
-
-<chess-view>1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 O-O 5.Bd3 d5 6.Nf3 c5</chess-view>
-
-<h2>Commentary in a panel</h2>
 <p>
-  <code>commentary="panel"</code> moves the annotator's prose out of the move
-  list and into a box that follows the position, which reads better when
-  there is a lot of it. The notes below are original, written for this demo
-  and MIT-licensed with the rest of the repository.
+  <code>s</code> is the token that selects the alternative,
+  <code>a</code> an action, <code>p</code> a rule to descend into,
+  <code>r</code> one to become, <code>b</code> how many tokens to give back.
+  That is most of the vocabulary. Because it is data, you can print it,
+  diff it, generate it — or hand it to an agent to write.
 </p>
 
-<chess-view commentary="panel">
+<h2>One table, two languages</h2>
+<p>
+  The grammar above lives in a single file. The build embeds the same
+  compiled JSON into the TypeScript package <em>and</em> the Go module, so
+  the two implementations cannot drift apart in the one place where drift
+  would be hardest to spot.
+</p>
+
+<div class="cols">
+  <div>
+    <h3>TypeScript</h3>
+<pre>import { parseGame } from '@tabnas/chess'
+
+const game = parseGame('1. e4 e5 *')
+game.moves[0].san    <span class="c">// 'e4'</span>
+game.moves[0].piece  <span class="c">// 'P'</span></pre>
+  </div>
+  <div>
+    <h3>Go</h3>
+<pre>import chess "github.com/tabnas/chess/go"
+
+db, _ := chess.Parse("1. e4 e5 *")
+db[0].Moves[0].San    <span class="c">// "e4"</span>
+db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
+  </div>
+</div>
+
+<p>
+  They are held to it. A shared fixture set of tab-separated cases is run by
+  both suites and compared against the same expected JSON — 351 assertions
+  on the TypeScript side, the identical corpus on the Go side. A change that
+  moves one runtime and not the other fails before it lands.
+</p>
+
+<h2>What comes back is plain data</h2>
+<p>
+  No classes, no cycles, nothing to unwrap. Every field is something the
+  notation actually said — and nothing that it did not. This parser has no
+  board, so it will not tell you <em>which</em> knight played
+  <code>Nf3</code>; it records the piece and the destination, because that
+  is what was written.
+</p>
+
+<pre>parseGame('1. e4 {Best by test.} e5 (1... c5) 1-0')
+
+{
+  tags: {},
+  moves: [
+    { san: 'e4', piece: 'P', to: 'e4', number: 1, side: 'w',
+      comments: [ { kind: 'brace', text: 'Best by test.' } ] },
+    { san: 'e5', piece: 'P', to: 'e5', number: 1, side: 'b',
+      variations: [ { moves: [ { san: 'c5', piece: 'P', to: 'c5', … } ] } ] }
+  ],
+  result: '1-0'
+}</pre>
+
+<h2>Try it — the notation is editable</h2>
+<p>
+  This board re-parses as you type. A half-typed game is the normal state of
+  an editor rather than a failure, so the position holds while you are
+  mid-move and the parser says what is wrong underneath.
+</p>
+
+<chess-view id="game-editor" source="edit" commentary="panel">1. d4 d5 2. c4 {The Queen's Gambit.} e6 3. Nc3 Nf6 *</chess-view>
+
+<p>
+  Delete a bracket and watch the message change. Those messages are not the
+  engine's — see below.
+</p>
+
+<h2>Error messages belong to the grammar</h2>
+<p>
+  An engine that knows nothing about chess can only report that a character
+  matched no active rule. A grammar can do better, because it knows what the
+  language is made of. Tabnas lets a grammar replace the text for any error
+  code, with a longer hint behind it:
+</p>
+
+<pre>error: {
+  unexpected:           <span class="k">'not chess notation: {src}'</span>,
+  unterminated_comment: <span class="k">'this comment is never closed'</span>,
+  unprintable:          <span class="k">'a tag value cannot contain a line break'</span>,
+}</pre>
+
+<p>
+  The component adds the one thing a grammar cannot know from the inside —
+  where you are looking — and the source, so it can name the bracket you
+  left open rather than the character the lexer happened to stop on:
+</p>
+
+<div class="cols errdemo">
+  <div>
+    <h3><code>1. e4 zz</code></h3>
+    <chess-view id="err-stray" notation="hidden" controls="hidden" coordinates="hidden">1. e4 zz</chess-view>
+  </div>
+  <div>
+    <h3><code>1. e4 (e5</code></h3>
+    <chess-view id="err-open" notation="hidden" controls="hidden" coordinates="hidden">1. e4 (e5</chess-view>
+  </div>
+</div>
+
+<h2>The diagram is generated from the grammar</h2>
+<p>
+  Because the rule table is data, a tool can read it back. This railroad
+  diagram was not drawn — <code>@tabnas/railroad</code> rendered it from the
+  same grammar the parser is running.
+</p>
+
+<figure>
+  <div class="diagram"><!--GRAMMAR-SVG--></div>
+  <figcaption>
+    The chess grammar as a syntax diagram. Rounded boxes are tokens, square
+    ones are rules.
+  </figcaption>
+</figure>
+
+<h2>Where the parser stops</h2>
+<p>
+  <code>@tabnas/chess</code> reads notation. It has no board, so it accepts
+  any well-formed move: <code>1. Qh8</code> parses happily and
+  <code>1. e9</code> does not, because the first is a legal <em>move</em> to
+  write and the second is not a move at all.
+</p>
+<p>
+  Showing a game needs the missing half, so this component carries a small
+  legal move generator that resolves each parsed move against the running
+  position — tested with <a href="https://www.chessprogramming.org/Perft">perft</a>
+  against published node counts. A move that is good notation but not legal
+  here stops its line and says so:
+</p>
+
+<chess-view id="game-illegal">1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-view>
+
+<h2>More of the same grammar</h2>
+
+<h3>Commentary, in a panel of its own</h3>
+<p>
+  Comments are kept, not discarded — the standard has two forms and both
+  survive into the model. Here the prose is given a box that follows the
+  position, which reads better than threading it through the moves. The
+  notes are original, written for this page.
+</p>
+
+<chess-view id="game-opera" commentary="panel">
 [Event "Opera Game"]
 [Site "Paris"]
 [Date "1858.??.??"]
@@ -132,16 +419,37 @@ a developing move: the rook arrives on the file of the pinned knight.} Rd8
 and the file is the game.} Nxb8 17. Rd8# 1-0
 </chess-view>
 
-<h2>Clocks and evaluations</h2>
+<h3>Annotations, glyphs and variations</h3>
 <p>
-  The <code>[%clk]</code> markup that lichess and chess.com put in comments
-  is <em>not</em> in the 1994 standard — it comes from the 2001
-  specification supplement, which also asks that commands be stripped before
-  display. They are, and the four that mean something to a reader are shown
-  as their own chip instead.
+  Clicking a move inside a variation follows that variation; the arrow keys
+  then walk it rather than the mainline.
 </p>
 
-<chess-view>
+<chess-view id="game-immortal" orientation="black">
+[Event "Immortal Game"]
+[White "Anderssen, Adolf"]
+[Black "Kieseritzky, Lionel"]
+[Date "1851.06.21"]
+[Result "1-0"]
+
+1. e4 e5 2. f4 {The King's Gambit: sharp, and out of fashion for a century.}
+exf4 3. Bc4 Qh4+ 4. Kf1 b5 $6 {The Bryan Counter-gambit.} (4... d6 {is the
+modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
+10. g4 Nf6 11. Rg1 $1 {A rook offered, and the attack begins.} cxb5 12. h4 Qg6
+13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 $3 Qxb2 18. Bd6 $3 Bxg1
+19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ $1 Nxf6 23. Be7# 1-0
+</chess-view>
+
+<h3>Clocks, evaluations, and markup the standard never defined</h3>
+<p>
+  The <code>[%clk]</code> markup lichess and chess.com emit is not in the
+  1994 standard — it comes from a
+  <a href="https://www.ficsgames.org/pgnsupp.txt">2001 supplement</a>, which
+  also asks that commands be stripped before display. They are, and the ones
+  that mean something to a reader become a chip.
+</p>
+
+<chess-view id="game-blitz">
 [Event "Rated Blitz game"]
 [TimeControl "180+0"]
 
@@ -150,25 +458,28 @@ and the file is the game.} Nxb8 17. Rd8# 1-0
 3. Bb5 { [%clk 0:02:52] } a6 { [%clk 0:02:49] } 1/2-1/2
 </chess-view>
 
-<h2>The source, and editing it</h2>
+<h3>A study, from a set position</h3>
 <p>
-  <code>source="edit"</code> puts the notation itself in the component and
-  re-parses as you type. A half-typed game is the normal state of an editor,
-  so the board holds its last good position rather than blinking out on
-  every keystroke.
+  A <code>FEN</code> tag says where play starts, so the move numbers and the
+  side to move come from the game rather than from move one.
 </p>
 
-<chess-view source="edit" commentary="panel">1. d4 d5 2. c4 {The Queen's Gambit.} e6 3. Nc3 Nf6 *</chess-view>
+<chess-view id="game-study" theme="dark">
+[SetUp "1"]
+[FEN "8/6P1/8/8/8/1k6/8/K7 w - - 0 51"]
 
-<h2>Just a board</h2>
+51. g8=Q+ {The pawn queens with check along the long diagonal.} Kb4
+52. Qb8+ Ka4 53. Qb2 {The queen cuts the king off; the white king walks up.} 1-0
+</chess-view>
+
+<h3>Just a board</h3>
 <p>
-  The switches are subtractive: <code>notation</code>, <code>controls</code>,
-  <code>tags</code> and <code>coordinates</code> each take a part of the UI
-  away. With all of them gone what is left is a diagram — and the arrow keys
-  still work.
+  Every part of the UI is a switch. With the notation, the controls and the
+  coordinates all off, what is left is a diagram — and the arrow keys still
+  work.
 </p>
 
-<chess-view notation="hidden" controls="hidden" coordinates="hidden" ply="33">
+<chess-view id="game-diagram" notation="hidden" controls="hidden" coordinates="hidden" ply="33">
 [White "Morphy, Paul"]
 [Black "Duke of Brunswick and Count Isouard"]
 
@@ -177,14 +488,47 @@ and the file is the game.} Nxb8 17. Rd8# 1-0
 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0
 </chess-view>
 
-<h2>When the notation is not a game</h2>
+<h2>Take it further</h2>
+
+<div class="cards">
+  <div class="card">
+    <h3><a href="https://tabnas.dev">tabnas.dev</a></h3>
+    <p>The engine itself: why grammars are data, how to write one, and a
+      playground that runs the real parser.</p>
+  </div>
+  <div class="card">
+    <h3><a href="https://github.com/tabnas/chess">tabnas/chess</a></h3>
+    <p>This grammar, both runtimes, the shared fixtures, and the component
+      on this page.</p>
+  </div>
+  <div class="card">
+    <h3>Install</h3>
+    <p>
+      <span class="pill">@tabnas/chess</span>
+      <span class="pill">@tabnas/chess-view</span>
+      <span class="pill">chess/go</span>
+    </p>
+  </div>
+</div>
+
 <p>
-  The parser accepts any well-formed SAN move; whether it is <em>playable</em>
-  is a different question, and one only a board can answer. A move that is
-  legal notation but not a legal move stops the line and says so.
+  The chess grammar is one of a set — JSON, JSONC, JSON5, jsonic, YAML and
+  others are the same shape of thing. Whichever language you need next, the
+  work is a table, and you start from one that already runs.
 </p>
 
-<chess-view>1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-view>
+</main>
+
+<footer class="wrap">
+  <a href="https://tabnas.dev">tabnas.dev</a>
+  <a href="https://github.com/tabnas/chess">GitHub</a>
+  <a href="https://www.npmjs.com/package/@tabnas/chess-view">npm</a>
+  <a href="https://pkg.go.dev/github.com/tabnas/chess/go">pkg.go.dev</a>
+  <div style="margin-top:0.75rem">
+    MIT. Copyright (c) <a href="https://richardrodger.com">Richard Rodger</a>.
+    The game annotations on this page are original, not transcribed.
+  </div>
+</footer>
 
 <script>
   // The component reports each move it shows.

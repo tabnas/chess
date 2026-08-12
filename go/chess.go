@@ -20,6 +20,7 @@ package tabnaschess
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ import (
 
 // VERSION is this module's version. It MUST equal ts/package.json
 // "version": TestVersionMatchesPackageJSON fails the build if they drift.
-const VERSION = "0.1.2"
+const VERSION = "0.1.3"
 
 // --- BEGIN EMBEDDED chess-grammar.jsonic ---
 const grammarText = `
@@ -1338,6 +1339,56 @@ func Chess(j *tabnas.Tabnas, options map[string]any) error {
 			AllowUnknown: boolPtr(true),
 		},
 
+		// The engine's error text is written for someone debugging a
+		// grammar: it reports the character class that did not match.
+		// Someone who fed this a PGN file wants the vocabulary of chess
+		// notation instead, so the plugin replaces the message for every
+		// code this grammar can actually reach — unexpected,
+		// unterminated_comment and unprintable, plus unterminated_string
+		// for completeness. Kept identical to ts/src/chess.ts.
+		//
+		// {src} is the offending source text, and is EMPTY when the
+		// notation simply ran out. The messages have to read sensibly
+		// either way, which is why none of them ends on the interpolation;
+		// the hint carries the ran-out case.
+		Error: map[string]string{
+			"unexpected":           "not chess notation: {src}",
+			"unterminated_comment": "this comment is never closed",
+			"unterminated_string":  "this tag value has no closing quote",
+			"unprintable":          "a tag value cannot contain a line break",
+		},
+
+		Hint: map[string]string{
+			"unexpected": `
+Chess notation is a sequence of move numbers, moves, comments,
+variations, glyphs and a result. Check for a stray character, or for
+something that looks like a move but is not one — Ke9 names no square,
+Nx names no destination. If the notation simply stops here, look instead
+for a variation "(" or a tag "[" that was never closed.`,
+			"unterminated_comment": `
+A brace comment runs from the opening brace to the next closing brace
+(PGN spec 5). To put a comment on the rest of a line, start it with a
+semicolon instead.`,
+			"unterminated_string": `
+A tag value is a double-quoted string that ends on the line it starts on
+(PGN spec 8.1).`,
+			"unprintable": `
+A tag value is a double-quoted string on a single line (PGN spec 8.1).
+The tag pair is probably missing its closing quote, so the value ran on
+into the next line.`,
+		},
+
+		// Colour is for a terminal. The engine turns it on unconditionally,
+		// so piping a parse error into a file or a CI log wraps the message
+		// in escape codes. Gate it the way every other tool does.
+		//
+		// Set here rather than alongside Parse, which is where the
+		// TypeScript side gates it: there, a caller can hand-build the
+		// engine and pass their own `color`, so the plugin must not take it
+		// back. Here Make always builds a fresh engine, so this is the only
+		// place available. The observable behaviour is the same.
+		Color: &tabnas.ColorOptions{Active: boolPtr(colourActive())},
+
 		Rule: &tabnas.RuleOptions{Start: o.start()},
 	}
 
@@ -1388,6 +1439,20 @@ var (
 	defaultOnce   sync.Once
 	defaultParser *tabnas.Tabnas
 )
+
+// colourActive reports whether error messages should carry ANSI colour:
+// only when standard output is a real terminal, and never when NO_COLOR is
+// set (https://no-color.org). Mirrors `colour()` in ts/src/chess.ts.
+func colourActive() bool {
+	if "" != os.Getenv("NO_COLOR") {
+		return false
+	}
+	info, err := os.Stdout.Stat()
+	if nil != err {
+		return false
+	}
+	return 0 != info.Mode()&os.ModeCharDevice
+}
 
 // Make builds a Tabnas engine with the chess grammar installed. Reuse the
 // result: building the grammar dominates a parse.

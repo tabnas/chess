@@ -263,7 +263,7 @@ const grammarText = `
 }`
 // --- END EMBEDDED chess-grammar.jsonic ---
 
-export const VERSION = '0.1.2'
+export const VERSION = '0.1.3'
 
 // --- The parse model -----------------------------------------------------
 
@@ -944,6 +944,48 @@ export const Chess: Plugin = function Chess(tn: Tabnas, options?: ChessOptions) 
       allowUnknown: true,
     },
 
+    /* The engine's error text is written for someone debugging a grammar:
+     * it reports the character class that did not match. Someone who fed
+     * this a PGN file wants the vocabulary of chess notation instead, so
+     * the plugin replaces the message for every code this grammar can
+     * actually reach — `unexpected`, `unterminated_comment` and
+     * `unprintable`, plus `unterminated_string` for completeness.
+     *
+     * Set here rather than in `parse` so that building the engine by hand
+     * — `new Tabnas().use(Chess)` — gets them too.
+     *
+     * `{src}` is the offending source text, and is EMPTY when the notation
+     * simply ran out. The messages have to read sensibly either way, which
+     * is why none of them ends on the interpolation; the hint carries the
+     * ran-out case.
+     */
+    error: {
+      unexpected: 'not chess notation: {src}',
+      unterminated_comment: 'this comment is never closed',
+      unterminated_string: 'this tag value has no closing quote',
+      unprintable: 'a tag value cannot contain a line break',
+    },
+
+    hint: {
+      unexpected: `
+Chess notation is a sequence of move numbers, moves, comments,
+variations, glyphs and a result. Check for a stray character, or for
+something that looks like a move but is not one — Ke9 names no square,
+Nx names no destination. If the notation simply stops here, look instead
+for a variation "(" or a tag "[" that was never closed.`,
+      unterminated_comment: `
+A brace comment runs from the opening brace to the next closing brace
+(PGN spec 5). To put a comment on the rest of a line, start it with a
+semicolon instead.`,
+      unterminated_string: `
+A tag value is a double-quoted string that ends on the line it starts on
+(PGN spec 8.1).`,
+      unprintable: `
+A tag value is a double-quoted string on a single line (PGN spec 8.1).
+The tag pair is probably missing its closing quote, so the value ran on
+into the next line.`,
+    },
+
     rule: { start },
   })
 
@@ -968,11 +1010,32 @@ Chess.defaults = {
  */
 export type DatabaseOptions = Omit<ChessOptions, 'start'>
 
+/**
+ * Whether to colour an error message.
+ *
+ * The engine turns colour on unconditionally, which is right for a
+ * terminal and wrong everywhere else: in a browser, a log file or a CI
+ * transcript the escape codes are noise wrapped around the message, and
+ * in a browser they are visible noise. Follow the convention every other
+ * tool follows — colour a real terminal, honour NO_COLOR, and stay quiet
+ * anywhere there is no `process` at all.
+ *
+ * Only `parse` and `parseGame` apply this. They build the whole engine, so
+ * the choice is theirs to make; a caller who builds their own engine has
+ * already been handed the `color` option and should not have it taken
+ * back by a plugin.
+ */
+function colour(): { active: boolean } {
+  const proc = (globalThis as Record<string, any>).process
+  if (null != proc?.env?.NO_COLOR && '' !== proc.env.NO_COLOR) return { active: false }
+  return { active: true === proc?.stdout?.isTTY }
+}
+
 /** Parse a PGN database (zero or more games). */
 export function parse(src: string, options?: DatabaseOptions): Database {
   // `start` is forced, not merely absent from the type: a JavaScript
   // caller has no type to stop them, and the return type would be a lie.
-  return new Tabnas().use(Chess, { ...options, start: 'pgn' }).parse(src)
+  return new Tabnas({ color: colour() }).use(Chess, { ...options, start: 'pgn' }).parse(src)
 }
 
 /** Parse a single game, or `undefined` if the source holds none. */

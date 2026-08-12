@@ -147,6 +147,43 @@ const { stripCommands } = require('@tabnas/chess')
 stripCommands('good [%clk 0:05:00] move') // => 'good move'
 ```
 
+## Errors
+
+A parse failure throws. The error carries `code`, `lineNumber` and
+`columnNumber` alongside the message, so a caller can rebuild the wording
+for its own audience rather than scraping the text.
+
+The messages are the grammar's, not the engine's. `Chess` replaces the
+template for every code this grammar can reach, so they speak about chess
+notation instead of about character classes:
+
+| Code | Message |
+|---|---|
+| `unexpected` | not chess notation: `{src}` |
+| `unterminated_comment` | this comment is never closed |
+| `unterminated_string` | this tag value has no closing quote |
+| `unprintable` | a tag value cannot contain a line break |
+
+Each has a longer `hint` behind it, which the engine prints under the
+source excerpt. Both are set through the engine's own `error` and `hint`
+options, so a caller who wants different wording can override them the
+same way — the plugin sets them, it does not own them.
+
+### Colour
+
+`parse` and `parseGame` colour an error **only** when standard output is a
+real terminal, and never when `NO_COLOR` is set. The engine's own default
+is to colour unconditionally, which is right for a terminal and wrong in a
+browser, a log file or a CI transcript — in a browser the escape codes are
+visible noise.
+
+This applies to those two functions only. Building the engine by hand
+means the `color` option is yours:
+
+```js
+new Tabnas({ color: { active: false } }).use(Chess)
+```
+
 ### `ANNOTATION_NAG`
 
 The glyph each traditional suffix annotation maps to (8.2.3.8, 10).

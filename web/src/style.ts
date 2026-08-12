@@ -207,7 +207,9 @@ svg.board { display: block; width: 100%; height: auto; }
 .var .mv { font-size: 0.95em; }
 .res { font-weight: 600; }
 
-.note { color: var(--muted); font-size: 0.8rem; }
+/* A full-width row under both panes: the status is about the component,
+   so it stays put when the notation is switched off. */
+.note { flex: 1 1 100%; min-width: 0; color: var(--muted); font-size: 0.8rem; }
 .note:empty { display: none; }
 .note.bad { color: var(--bad); }
 
