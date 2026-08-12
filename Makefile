@@ -7,16 +7,16 @@
 # grammar change, or Go will compile against a stale copy.
 
 .PHONY: all build test clean reset diagram \
-        build-ts build-go test-ts test-go clean-ts clean-go \
-        publish-ts publish-go tags-go tidy-go
+        build-ts build-go build-web test-ts test-go test-web \
+        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go
 
 all: build test
 
-build: build-ts build-go
+build: build-ts build-go build-web
 
-test: test-ts test-go
+test: test-ts test-go test-web
 
-clean: clean-ts clean-go
+clean: clean-ts clean-go clean-web
 
 # --- TypeScript (package in ts/) ---
 build-ts:
@@ -31,6 +31,17 @@ clean-ts:
 # Publish the TypeScript package at its current package.json version.
 publish-ts: test-ts
 	cd ts && npm publish --access public
+
+# --- Web component (package in web/) ---
+# Bundles the TypeScript package, so build-ts has to have run first.
+build-web: build-ts
+	cd web && npm run build
+
+test-web: build-web
+	cd web && npm test
+
+clean-web:
+	rm -rf web/dist
 
 # --- Go (module in go/) ---
 build-go:

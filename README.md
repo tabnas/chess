@@ -147,6 +147,26 @@ board library if you need the difference. Also out of scope: FEN and EPD as
 standalone documents (sections 16.1 and 16.2), and the non-standard `--`
 null move and `(=)` draw offer some tools emit.
 
+## A board to look at
+
+[`web/`](web/) is a self-contained `<chess-game>` web component built on
+this parser: a classic 2D board, controls to step through the game, and the
+notation highlighted move by move.
+
+```html
+<script src="chess-game.js"></script>
+
+<chess-game>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-game>
+```
+
+![the component showing the Immortal Game](web/doc/screenshot.png)
+
+It is also where the parser's one hard limit becomes concrete. `Nf3` names
+a piece and a destination, and a parser with no board cannot know *which*
+knight — so the component supplies the missing half, a small legal move
+generator that resolves each parsed move against the running position. See
+[`web/README.md`](web/README.md).
+
 ## Documentation
 
 Full documentation follows the [Diátaxis](https://diataxis.fr) framework —

@@ -1,0 +1,52 @@
+{
+  "name": "@tabnas/chess-game",
+  "version": "0.1.0",
+  "description": "A self-contained <chess-game> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
+  "main": "dist/chess-game.esm.js",
+  "module": "dist/chess-game.esm.js",
+  "unpkg": "dist/chess-game.js",
+  "jsdelivr": "dist/chess-game.js",
+  "type": "commonjs",
+  "homepage": "https://github.com/tabnas/chess",
+  "keywords": [
+    "chess",
+    "pgn",
+    "web-component",
+    "custom-element",
+    "chessboard",
+    "tabnas"
+  ],
+  "author": "Richard Rodger (http://richardrodger.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/tabnas/chess.git",
+    "directory": "web"
+  },
+  "files": [
+    "src",
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "start": "node build.js --serve",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/*.test.js",
+    "pretest": "npm run build",
+    "clean": "rm -rf dist node_modules package-lock.json",
+    "reset": "npm run clean && npm i && npm run build && npm test"
+  },
+  "devDependencies": {
+    "@tabnas/chess": "file:../ts",
+    "@tabnas/parser": "*",
+    "@types/node": "25.6.0",
+    "esbuild": "0.28.2",
+    "playwright-core": "^1.62.1",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
