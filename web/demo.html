@@ -189,8 +189,9 @@
       <span class="motto">a chessboard for any page</span>
     </div>
     <p class="tagline">
-      One script tag. Paste a game in, get a board you can step through.
-      No dependencies, no configuration, no second request.
+      One script tag and you've got a chessboard. Paste in a game, and your
+      readers can play through it. No dependencies, no build step, nothing
+      else to download.
     </p>
     <p class="meta">
       Free and open source, MIT licensed ·
@@ -205,25 +206,30 @@
 
 <h1>Put a chess game on a page</h1>
 <p class="lede">
-  The game <em>is</em> the markup. Write the notation between the tags and
-  that is the whole integration — the board, the move list, the controls and
-  the parser arrive in one file.
+  The game is the markup. You write the notation between the tags, and
+  that's it — that's the whole integration.
 </p>
 
 <p>
-  <code>&lt;chess-view&gt;</code> takes a game written in
+  So you've got a chess game you want to put in front of people. Maybe it's
+  your club's game of the month, maybe it's the one where you finally beat
+  your brother-in-law. <code>&lt;chess-view&gt;</code> takes it in
   <abbr title="Portable Game Notation">PGN</abbr> — the format every chess
-  site and database exports — and draws it. Readers step through with the
-  buttons, the arrow keys, or by clicking any move; comments, variations
-  and annotation glyphs all come through. It is about 37&nbsp;kB over the
-  wire, it fetches nothing else, and it works on a plain HTML page as
-  readily as inside a framework.
+  site and every database exports — and draws it.
+</p>
+<p>
+  Your readers step through with the buttons, the arrow keys, or by clicking
+  any move they fancy. Comments, variations and annotation glyphs all come
+  through, because the parser keeps them. It's about 37&nbsp;kB over the
+  wire, it fetches nothing else, and it's just as happy on a plain HTML page
+  as inside a framework.
 </p>
 <p>
   Reading the notation is done by <a href="#tabnas">tabnas</a>, a parsing
-  engine whose grammars are data rather than code. You do not need to know
-  that to use the board — <a href="#tabnas">the last section</a> is there if
-  you want it.
+  engine where grammars are data rather than code. You don't need to know
+  any of that to use the board, so I've put it
+  <a href="#tabnas">at the end</a> — skip ahead if you're curious, ignore it
+  entirely if you're not.
 </p>
 
 <chess-view id="game-fischer">
@@ -250,8 +256,9 @@ f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
 
 <h2>Install</h2>
 <p>
-  From a CDN, pinned — the same URL without a version follows the latest
-  release, which is convenient right up until it is not:
+  Grab it from a CDN. Pin the version! The same URL without one follows
+  whatever the latest release happens to be, which is lovely right up until
+  the morning it isn't:
 </p>
 
 <pre>&lt;script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"&gt;&lt;/script&gt;
@@ -261,8 +268,8 @@ f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
   src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3/dist/chess-view.mjs"&gt;&lt;/script&gt;</pre>
 
 <p>
-  Or from npm, where it has no dependencies at all — the parser is bundled
-  in, and so are the TypeScript declarations:
+  Or from npm, where it has no dependencies at all. None. The parser is
+  bundled in, and so are the TypeScript declarations:
 </p>
 
 <pre>npm install @tabnas/chess-view
@@ -271,18 +278,23 @@ f3 Bc8 34. Kf2 Bf5 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5
 import '@tabnas/chess-view'</pre>
 
 <p>
-  Every release ships the integrity hashes of the files it published, at
-  <code>dist/sri.json</code>, so a pinned <code>&lt;script&gt;</code> can carry an
-  <code>integrity</code> attribute. Importing on a server is safe: nothing
-  touches the DOM until the element registers, and registration is skipped
-  where there is no custom element registry.
+  Every release ships the integrity hashes of the files it published, in
+  <code>dist/sri.json</code>, so you can put an <code>integrity</code>
+  attribute on that pinned <code>&lt;script&gt;</code> and know you got what you
+  asked for.
+</p>
+<p>
+  Server-side rendering? That's fine. Importing the package on a server does
+  nothing at all — it doesn't touch the DOM, and it skips registration
+  entirely when there's no custom element registry to register with. (This
+  was a bug once. It isn't now.)
 </p>
 
 <h2>The options</h2>
 <p>
-  Ten attributes, and that is the whole surface. The last four are
-  subtractive — each takes a part of the UI away and the rest closes up
-  around it.
+  Ten attributes, and that's the whole surface — no config object, no init
+  call, nothing to wire up. The last four are subtractive: each one takes a
+  piece of the UI away, and the rest closes up around the gap.
 </p>
 
 <div class="scroll">
@@ -307,20 +319,23 @@ import '@tabnas/chess-view'</pre>
 
 <h3><code>source="edit"</code> — let the reader type</h3>
 <p>
-  The board re-parses as you type. A half-typed game is the normal state of
-  an editor rather than a failure, so the position holds while you are
-  mid-move and the message underneath says what is wrong. Try deleting a
-  bracket.
+  Go on, type in it. The board re-parses on every keystroke.
+</p>
+<p>
+  Half-typed notation is the normal state of an editor, not a failure, so the
+  board holds its position while you're mid-move instead of blinking out and
+  back. Delete a bracket and see what it tells you.
 </p>
 
 <chess-view id="game-editor" source="edit" commentary="panel">1. d4 d5 2. c4 {The Queen's Gambit.} e6 3. Nc3 Nf6 *</chess-view>
 
 <h3><code>commentary="panel"</code> — prose in a box of its own</h3>
 <p>
-  Comments are kept, not discarded, and both of the standard's two forms
-  survive. Inline they read as an annotated game does on paper; in a panel
-  they follow the position, which is better when there is a lot of them.
-  These notes are original, written for this page.
+  Plenty of parsers throw comments away. This one keeps them — both of the
+  forms the standard defines. Inline, they read the way an annotated game
+  reads on paper. In a panel, they follow the position instead, which is far
+  better when there's a lot of them. (The notes below are mine, written for
+  this page.)
 </p>
 
 <chess-view id="game-opera" commentary="panel">
@@ -347,9 +362,9 @@ and the file is the game.} Nxb8 17. Rd8# 1-0
 
 <h3><code>orientation="black"</code>, and variations</h3>
 <p>
-  Clicking a move inside a variation follows that variation; the arrow keys
-  then walk it rather than the mainline. <kbd>Home</kbd> returns to the
-  mainline.
+  Click a move inside a variation and you'll follow that variation — the
+  arrow keys then walk it rather than the mainline. <kbd>Home</kbd> brings
+  you back.
 </p>
 
 <chess-view id="game-immortal" orientation="black">
@@ -369,9 +384,10 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
 
 <h3><code>theme="dark"</code>, and starting from a position</h3>
 <p>
-  A <code>FEN</code> tag says where play starts, so the move numbers and the
-  side to move come from the game rather than from move one. Leave
-  <code>theme</code> off and the board follows the reader's system setting.
+  Not every game starts at move one. A <code>FEN</code> tag says where play
+  begins, and the move numbers and the side to move come from the game
+  itself. Leave <code>theme</code> off entirely and the board follows your
+  reader's system setting, which is usually what you want.
 </p>
 
 <chess-view id="game-study" theme="dark">
@@ -384,9 +400,9 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
 
 <h3>Everything off, plus <code>ply</code> — just a diagram</h3>
 <p>
-  With the notation, the controls and the coordinates all hidden, what is
-  left is a static diagram opened at whichever move you name. The arrow keys
-  still work, because hiding the buttons hides the buttons and nothing else.
+  Turn off the notation, the controls and the coordinates and what's left is
+  a diagram, opened at whichever move you name. The arrow keys still work,
+  mind — hiding the buttons hides the buttons, and nothing else.
 </p>
 
 <pre>&lt;<span class="k">chess-view</span> notation="hidden" controls="hidden" coordinates="hidden" ply="33"&gt;
@@ -407,12 +423,14 @@ modern reply.} 5. Nc3) 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6
   Buttons for start, previous, next, end and flip — and the same from the
   keyboard whenever the component has focus:
   <kbd>←</kbd> <kbd>→</kbd> <kbd>Home</kbd> <kbd>End</kbd> <kbd>f</kbd>.
-  Clicking any move in the notation jumps straight to it.
+  Or just click any move in the notation and you're there.
 </p>
 
 <h2>From JavaScript</h2>
 <p>
-  Two events, both bubbling, so a listener on <code>document</code> works:
+  Want to do something when the reader moves through the game? There are two
+  events, and they both bubble, so you can listen on <code>document</code>
+  and forget about where the board actually is:
 </p>
 
 <pre>document.addEventListener('chess-move', (e) =&gt; {
@@ -441,16 +459,19 @@ document.addEventListener('chess-source', (e) =&gt; {
 </div>
 
 <p>
-  TypeScript users get the declarations in the package, wired into the
-  editor's own model of HTML: <code>querySelector('chess-view')</code> is a
-  <code>ChessViewElement</code> without a cast, and
-  <code>e.detail</code> above is typed.
+  If you're writing TypeScript, the declarations ship in the package and
+  they're wired into the editor's own model of HTML. So
+  <code>querySelector('chess-view')</code> gives you a
+  <code>ChessViewElement</code> with no cast, and that
+  <code>e.detail</code> above is typed. Nice.
 </p>
 
 <h2>Styling</h2>
 <p>
-  Everything is a custom property, set on the element or inherited, and the
-  shadow root exposes its parts:
+  The board lives in a shadow root, so your page styles can't reach in and
+  break it — but that cuts both ways, and you probably do want to change the
+  colours. Everything you'd reasonably want is a custom property, and the
+  parts are exposed:
 </p>
 
 <pre>chess-view {
@@ -465,9 +486,11 @@ chess-view::part(notation) { <span class="c">/* … also board, controls, moves,
 
 <h2>When the notation is wrong</h2>
 <p>
-  A parse error is written for someone holding a PGN file, not for someone
-  debugging a grammar — with the whole word that failed, where it is, and
-  the bracket you left open when that is the real problem.
+  Sooner or later somebody pastes in something that isn't a game. When that
+  happens, the message you get is written for a person holding a PGN file,
+  not for a person debugging a grammar. You get the whole word that failed,
+  where to find it, and — when that's the real problem — the bracket you
+  forgot to close.
 </p>
 
 <div class="cols errdemo">
@@ -483,25 +506,29 @@ chess-view::part(notation) { <span class="c">/* … also board, controls, moves,
 
 <h2>What it will not do</h2>
 <p>
-  It reads notation, and it plays that notation onto a board. It is not a
-  chess engine: it will not evaluate, suggest, or let you drag pieces, and
-  it does not adjudicate draws by repetition or the fifty-move rule.
+  Let's be clear about the boundaries. This reads notation and plays it onto
+  a board. It is not a chess engine. It won't evaluate a position, it won't
+  suggest a move, you can't drag the pieces, and it won't tell you a game was
+  drawn by repetition or the fifty-move rule. If you need any of that, you
+  need something else (and you can feed this one's output straight into it).
 </p>
 <p>
-  A move that is well-formed notation but not legal in the position stops
-  its line and says so — a different failure from a syntax error, and
-  reported as one:
+  What about a move that's perfectly good notation but simply isn't legal
+  here? That's a different kind of wrong from a syntax error, and it gets
+  reported as one. The line stops, and the board says why:
 </p>
 
 <chess-view id="game-illegal">1. e4 e5 2. Nf3 Nc6 3. Qxh8 {No queen can reach h8 here.} 1-0</chess-view>
 
 <h3>Markup the standard never defined</h3>
 <p>
-  The <code>[%clk]</code> markup lichess and chess.com emit is not in the
-  1994 standard — it comes from a
+  Export a game from lichess or chess.com and you'll find <code>[%clk]</code>
+  markup in the comments. Is that in the 1994 standard? Nope. It comes from a
   <a href="https://www.ficsgames.org/pgnsupp.txt">2001 supplement</a>, which
-  also asks that commands be stripped before display. They are, and the ones
-  that mean something to a reader become a chip instead.
+  also asks that these commands be stripped out before display — otherwise
+  every move of your game reads <code>[%clk 0:03:00]</code> where the
+  annotation should be. So they are stripped, and the handful that actually
+  mean something to a reader come back as a little chip instead.
 </p>
 
 <chess-view id="game-blitz">
@@ -513,24 +540,26 @@ chess-view::part(notation) { <span class="c">/* … also board, controls, moves,
 3. Bb5 { [%clk 0:02:52] } a6 { [%clk 0:02:49] } 1/2-1/2
 </chess-view>
 
-<h2 id="tabnas">What is underneath: tabnas</h2>
+<h2 id="tabnas">So how does it read the notation?</h2>
 <p class="lede">
-  If you only wanted a board, you have it — this is the part for anyone
-  wondering how the notation gets read, or who needs to teach a parser a
-  different language tomorrow.
+  If you just wanted a chessboard, you've got one — you can stop here with my
+  blessing. This last part is for anyone wondering how the notation actually
+  gets read, or who might need to teach a parser a different language next
+  week.
 </p>
 
 <p>
-  Everything above is driven by a grammar for
-  <abbr title="Portable Game Notation">PGN</abbr>, running on
-  <a href="https://tabnas.dev">tabnas</a>. The interesting claim is that the
-  grammar is <em>data</em>: a table saying, for each rule, which token opens
-  which alternative and what to do about it. Nobody generates a parser, and
-  nobody writes a recursive-descent function by hand.
+  Everything above runs on a grammar for
+  <abbr title="Portable Game Notation">PGN</abbr>, and that grammar runs on
+  <a href="https://tabnas.dev">tabnas</a>. Here's the interesting bit: the
+  grammar is <em>data</em>. It's a table that says, for each rule, which
+  token opens which alternative and what to do about it. Nobody generated a
+  parser from it, and nobody sat down and hand-wrote a recursive-descent
+  function.
 </p>
 <p>
-  Here is the whole of the rule that reads one element of a game — a move, a
-  move number, a glyph, a comment, or a nested variation:
+  Don't take my word for it. Here's the whole rule that reads one element of
+  a game — a move, a move number, a glyph, a comment, or a nested variation:
 </p>
 
 <pre><span class="c"># A movetext element (PGN spec 8.2).</span>
@@ -548,19 +577,21 @@ rule: element: close: [
 ]</pre>
 
 <p>
-  <code>s</code> is the token that selects the alternative,
-  <code>a</code> an action, <code>p</code> a rule to descend into,
-  <code>r</code> one to become, <code>b</code> how many tokens to give back.
-  That is most of the vocabulary. Because it is data, you can print it,
-  diff it, generate it — or hand it to an agent to write.
+  <code>s</code> is the token that picks the alternative, <code>a</code> is
+  an action, <code>p</code> is a rule to descend into, <code>r</code> one to
+  become, and <code>b</code> is how many tokens to hand back. That's most of
+  the vocabulary, honestly. And because the whole thing is data, you can
+  print it, diff it, generate it — or hand it to an agent and let it write
+  the grammar for you.
 </p>
 
 <h3>One table, two languages</h3>
 <p>
-  The grammar lives in a single file. The build embeds the same compiled JSON
-  into the TypeScript package <em>and</em> the Go module, so the two
-  implementations cannot drift apart in the one place where drift would be
-  hardest to spot.
+  The grammar lives in one file. The build embeds the same compiled JSON into
+  the TypeScript package <em>and</em> the Go module — so the two
+  implementations can't quietly drift apart, which is exactly the sort of
+  drift you'd never notice until a user reports that one of them parses their
+  file and the other doesn't.
 </p>
 
 <div class="cols">
@@ -583,20 +614,24 @@ db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
 </div>
 
 <p>
-  They are held to it. A shared fixture set of tab-separated cases is run by
-  both suites and compared against the same expected JSON — 351 assertions
-  on the TypeScript side, the identical corpus on the Go side. A change that
-  moves one runtime and not the other fails before it lands.
+  And they're held to it. There's a shared set of test cases — plain
+  tab-separated text — that both suites run against the same expected JSON.
+  351 assertions on the TypeScript side, the identical corpus on the Go side.
+  Move one runtime and not the other, and the build tells you before it
+  lands.
 </p>
 
 <h3>What comes back is plain data</h3>
 <p>
-  No classes, no cycles, nothing to unwrap. Every field is something the
-  notation actually said — and nothing that it did not. The parser has no
-  board, so it will not tell you <em>which</em> knight played
-  <code>Nf3</code>; it records the piece and the destination, because that is
-  what was written. Resolving that is the component's job, with a legal move
-  generator tested against published
+  No classes, no cycles, nothing to unwrap before you can use it. Every field
+  is something the notation actually said — and nothing it didn't.
+</p>
+<p>
+  Which means the parser won't tell you <em>which</em> knight played
+  <code>Nf3</code>. It can't! It has no board. It records the piece and the
+  destination, because that's what was written down, and guessing the rest
+  would be making things up. Working out the actual knight is the component's
+  job, and it does that with a legal move generator checked against published
   <a href="https://www.chessprogramming.org/Perft">perft</a> counts.
 </p>
 
@@ -615,10 +650,11 @@ db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
 
 <h3>The error messages belong to the grammar</h3>
 <p>
-  An engine that knows nothing about chess can only report that a character
-  matched no active rule. A grammar can do better, because it knows what the
-  language is made of — so the messages you saw above are set by the grammar,
-  not the engine:
+  Remember those error messages further up? Here's where they come from. An
+  engine that knows nothing about chess can only tell you that a character
+  matched no active rule, which is true and useless. A grammar can do better,
+  because it knows what the language is made of — so the grammar sets the
+  wording, not the engine:
 </p>
 
 <pre>error: {
@@ -629,9 +665,10 @@ db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
 
 <h3>The diagram is generated from the grammar</h3>
 <p>
-  Because the rule table is data, a tool can read it back. This railroad
-  diagram was not drawn — <code>@tabnas/railroad</code> rendered it from the
-  same grammar the parser is running.
+  One more consequence of the table being data: another tool can read it
+  back. Nobody drew this railroad diagram. <code>@tabnas/railroad</code>
+  generated it from the very same grammar the parser above is running, which
+  means it can't go stale.
 </p>
 
 <figure>
@@ -666,9 +703,10 @@ db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
 </div>
 
 <p>
-  The chess grammar is one of a set — JSON, JSONC, JSON5, jsonic, YAML and
-  others are the same shape of thing. Whichever language you need next, the
-  work is a table, and you start from one that already runs.
+  Chess is just one grammar out of a set — JSON, JSONC, JSON5, jsonic, YAML
+  and the rest are all the same shape of thing. So whichever language you
+  need to read next, the work is a table, and you get to start from one that
+  already runs.
 </p>
 
 </main>
