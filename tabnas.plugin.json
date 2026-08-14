@@ -1,0 +1,16 @@
+{
+  "$schema": "https://tabnas.dev/schema/plugin.schema.json",
+  "name": "@tabnas/chess",
+  "go": "github.com/tabnas/chess/go",
+  "description": "Chess notation parsing for the tabnas engine: PGN games and SAN moves.",
+  "engine": "@tabnas/parser",
+  "grammar": "chess-grammar.jsonic",
+  "extensions": [
+    ".pgn"
+  ],
+  "specDir": "test/spec",
+  "errorCodes": [],
+  "docs": "https://tabnas.dev/docs/packages",
+  "repository": "https://github.com/tabnas/chess",
+  "versionSource": "ts/package.json"
+}
