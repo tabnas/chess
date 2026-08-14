@@ -48,5 +48,5 @@ input	expected	opts
 # Two commands in one comment, the first of which holds a bracket.
 1. e4 {[%a "x]y"] mid [%clk 0:01]}	{"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","comments":[{"kind":"brace","text":"[%a \"x]y\"] mid [%clk 0:01]","commands":[{"name":"a","args":["x]y"]},{"name":"clk","args":["0:01"]}]}]}]}	{"start":"movetext"}
 # --- rejections ---
-1. e4 {never closed	ERROR:unterminated	{"start":"movetext"}
+1. e4 {never closed	ERROR:unterminated_comment	{"start":"movetext"}
 1. e4 a}	ERROR	{"start":"movetext"}
