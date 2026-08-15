@@ -188,10 +188,13 @@ go build ./...
 go test ./...          # the shared fixtures, plus a Go-side suite
 ```
 
-The repo-root [`Makefile`](Makefile) wraps both halves: `make build|test|
-clean` run the TS and Go sides, `make reset` rebuilds from clean,
-`make tags-go` lists `go/v*` tags, and `make publish-go V=x.y.z` injects V
-into the `const VERSION` in `go/chess.go`, commits and tags `go/vX.Y.Z`.
+The repo-root [`Makefile`](Makefile) wraps all three sides: `make
+build|test|clean` run the TS, Go **and `web/`** parts (see the note below
+on `test-web`'s ordering), `make reset` rebuilds from clean, `make diagram`
+regenerates the railroad diagram, `make tidy-go` tidies the Go module,
+`make tags-go` lists `go/v*` tags, `make publish-ts` publishes the npm
+package, and `make publish-go V=x.y.z` injects V into the `const VERSION`
+in `go/chess.go`, then commits, tags `go/vX.Y.Z` and pushes.
 
 ## Verify your work
 
