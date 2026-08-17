@@ -1,0 +1,11 @@
+# pkg-config for libtabnaschess (tabnas-clib-template: v1)
+# Install alongside the built library; substitute @PREFIX@ at install.
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libtabnaschess
+Description: chess parser (libtabnaschess) — uniform tabnas C ABI (ADR-12)
+Version: @VERSION@
+Libs: -L${libdir} -ltabnaschess
+Cflags: -I${includedir}
