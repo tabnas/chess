@@ -64,6 +64,10 @@ const c = @cImport(@cInclude("tabnas.h"));
 // c.tabnas_free.
 ```
 
+## Format notes
+
+PGN permits Latin-1 (spec §4.1); such bytes parse but are not JSON-representable, so the reply carries `valueError` instead of a silently transcoded value — transcode input to UTF-8 first when the parsed value is needed through this ABI.
+
 ## Layout
 
 - `core.go` — the behaviour, in plain Go (testable).
