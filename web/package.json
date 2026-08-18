@@ -1,6 +1,6 @@
 {
   "name": "@tabnas/chess-view",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A self-contained <chess-view> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
   "type": "commonjs",
   "exports": {
