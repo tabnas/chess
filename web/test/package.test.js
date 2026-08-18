@@ -122,13 +122,19 @@ describe('declarations', () => {
 describe('the published tarball', () => {
   // --ignore-scripts: `prepack` would rebuild, and the build is what put
   // dist/ there in the first place.
-  const packed = JSON.parse(
+  // npm 11 returns an ARRAY of pack results; npm 12 returns an OBJECT
+  // keyed by package name. Normalise, or `[0]` is undefined on npm 12 and
+  // every assertion below dies on `packed.files`.
+  const packedRaw = JSON.parse(
     execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
       cwd: ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }),
-  )[0]
+  )
+  const packed = Array.isArray(packedRaw)
+    ? packedRaw[0]
+    : Object.values(packedRaw)[0]
   const shipped = new Set(packed.files.map((f) => f.path))
 
   test('contains every entry point', () => {
