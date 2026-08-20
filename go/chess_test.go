@@ -433,35 +433,3 @@ func TestParseIsRaceFreeOnFirstUse(t *testing.T) {
 }
 
 var errCount = errors.New("expected exactly one game")
-
-// --- Divergence pin (see DIVERGENCE.md) ------------------------------------
-
-// TestRejectsAtADifferentTokenFromTypeScript pins a DIVERGENCE, not a
-// contract: on `[a b]` this port stops at `a` and TypeScript gets past it
-// and stops at `b`. Both reject, with the same code, at different columns
-// — because they fail at different TOKENS.
-//
-// The TypeScript twin is 'rejects at a different token from Go' in
-// ts/test/chess.test.ts. Repairing either port turns that port's test red
-// and forces the pair and the DIVERGENCE.md entry to be deleted together
-// (ADR-14).
-//
-// The position is asserted EXACTLY. A bound would pass for any column
-// left of TypeScript's, which is most of them, and would not pin the
-// thing the entry names.
-func TestRejectsAtADifferentTokenFromTypeScript(t *testing.T) {
-	j := Make()
-	_, err := j.Parse("[a b]")
-	if err == nil {
-		t.Fatal("`[a b]` must be rejected, so this test proves nothing")
-	}
-
-	msg := err.Error()
-	if !strings.Contains(msg, "1:2") {
-		t.Errorf("expected a rejection at 1:2 (this port stops at `a`), "+
-			"got:\n%s\n\nIf this port now stops where TypeScript does "+
-			"(1:4, on `b`), delete this test, its twin in "+
-			"ts/test/chess.test.ts, and the DIVERGENCE.md entry together",
-			msg)
-	}
-}

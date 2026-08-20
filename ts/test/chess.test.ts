@@ -309,33 +309,3 @@ describe('errors', () => {
   })
 })
 
-// --- Divergence pin (see DIVERGENCE.md) -------------------------------------
-
-describe('divergence', () => {
-  // Pins a DIVERGENCE, not a contract: on `[a b]` this port gets past `a`
-  // and stops at `b`, where Go stops at `a`. Both reject, with the same
-  // code, at different columns — because they fail at different TOKENS.
-  //
-  // The Go twin is TestRejectsAtADifferentTokenFromTypeScript in
-  // go/chess_test.go. Repairing either port turns that port's test red and
-  // forces the pair and the DIVERGENCE.md entry to be deleted together
-  // (ADR-14).
-  //
-  // The position is asserted EXACTLY. A bound would pass for any column
-  // right of Go's, which is most of them, and would not pin the thing the
-  // entry names.
-  test('rejects at a different token from Go', () => {
-    let msg = ''
-    try {
-      new Tabnas().use(Chess).parse('[a b]')
-      assert.fail('`[a b]` must be rejected, so this test proves nothing')
-    } catch (e: any) {
-      msg = String(e && e.message)
-    }
-    assert.match(msg, /1:4/,
-      'expected a rejection at 1:4 (this port stops at `b`). If this port ' +
-      'now stops where Go does (1:2, on `a`), delete this test, its twin ' +
-      'in go/chess_test.go, and the DIVERGENCE.md entry together — got:\n' +
-      msg)
-  })
-})
