@@ -1,3 +1,11 @@
+# Target: tabnas/chess -> .github/workflows/pages.yml
+#
+# Staged so the action pins here can be promoted by rollout/apply-workflows.sh
+# (ADR-8: automation sessions cannot push .github/workflows/*). This was the
+# only live workflow in the fleet carrying unpinned action tags with no
+# template to fix it through — skills/ci.yml and support/ci.yml, the other
+# two, already had one.
+#
 name: pages
 
 on:
@@ -23,8 +31,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
           node-version: 24
 
@@ -37,10 +45,10 @@ jobs:
         working-directory: web
         run: npm i && npm run build
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:
           path: web/dist
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0
         
