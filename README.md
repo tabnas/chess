@@ -12,6 +12,8 @@
 A live board you can step through, edit and take apart, with every option
 demonstrated. It is the fastest way to see what this is.
 
+Docs, guides, the error reference and the playground: **[tabnas.dev](https://tabnas.dev)**.
+
 ---
 
 A grammar plugin that teaches the [Tabnas](https://github.com/tabnas/parser)
