@@ -1,6 +1,6 @@
 {
   "name": "@tabnas/chess",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A Tabnas grammar plugin that parses chess notation: PGN games and the SAN moves inside them.",
   "main": "dist/chess.js",
   "type": "commonjs",
