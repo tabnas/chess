@@ -1,15 +1,48 @@
-# Publishes this repo's @tabnas/* package to npm on a `ts/v*` tag push, via
-# GitHub OIDC Trusted Publishing (no token). The build runs against the
-# ALREADY-PUBLISHED dependency versions (npm i resolves them), so a failing
-# build never publishes. The full test suite is gated separately: the
-# orchestrator (admin/publish.sh) verifies build+test locally against
-# published deps and requires a green main CI (polyglot-ci) before tagging.
-# Tests are not re-run here because some suites load sibling packages by path
-# (e.g. debug -> abnf), which don't exist in this standalone publish env.
-# Go modules are served by the module proxy from the `go/v*` tag directly.
+# Target: tabnas/chess -> .github/workflows/release.yml
+#
+# Publishes @tabnas/chess to npm via GitHub OIDC Trusted Publishing (no
+# token), writes the release tags, and separately ships the bundled web
+# component. The fleet-standard shape — see lsp__release.yml for the
+# reasoning — plus the second job this repo has always had.
+#
+# STAGED AS PART OF THE M9 SWEEP: release.yml was the one workflow kind
+# never brought under rollout/, so ADR-16's node24 sweep never reached
+# it and every deployed copy still pinned checkout@34e11487 and
+# setup-node@49933ea5. Both jobs' pins move here.
+#
+# TWO PACKAGES, TWO TAG LINES, and that is deliberate:
+#
+#   ts/  -> @tabnas/chess       ts/v*   library, in admin/publish.sh ORDER
+#   web/ -> @tabnas/chess-game  web/v*  bundled <chess-game> component
+#
+# The component carries its own version line because it is a BUILT
+# artifact whose contents change when the BUNDLE changes — a new parser,
+# a board fix — which is not the same event as a grammar release.
+# publish.sh covers ts/ and go/ only; publish-web is how the component
+# ships.
+#
+# The dispatch path releases the LIBRARY (ts/ + go/ tags). The component
+# keeps its tag-push path: its version is not the library's, so a single
+# dispatch input cannot mean both, and inventing one would let a library
+# release quietly republish a component that had not changed.
+#
+# npm allows exactly ONE workflow file per trusted publisher — and this
+# repo has TWO packages, so both trust records must name THIS file.
+# Renaming it breaks both until the npm-side entries are updated.
+#
+# Actions are pinned to full commit SHAs with the corresponding release
+# as a trailing comment, on the lowest major whose `runs.using` is
+# node24 (ADR-16).
+
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      go:
+        description: 'Also tag the Go module (go/v<version>)'
+        type: boolean
+        default: true
   push:
     tags:
       - 'ts/v*'
@@ -20,24 +53,102 @@ permissions:
 
 jobs:
   publish-npm:
-    if: startsWith(github.ref, 'refs/tags/ts/v')
+    # The dispatch path has to be allowed through explicitly: a dispatch
+    # runs on refs/heads/main, so the tag test alone would skip the job
+    # and the run would succeed having published nothing.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/ts/v')
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: read
+      id-token: write   # OIDC -> npm; cannot write refs
+      contents: write   # GITHUB_TOKEN -> tags; cannot publish
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          fetch-depth: 0   # tags, for the already-released guard
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Build and publish to npm (OIDC trusted publishing)
+
+      - name: Read the version
+        id: v
+        run: |
+          V="$(node -p "require('./ts/package.json').version")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Releasing $V"
+
+      - name: Refuse a dispatch from anywhere but main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::release must be dispatched from main (got ${{ github.ref }})"
+          exit 1
+
+      - name: Decide which tags this run must create
+        id: tags
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          MISSING=""; ANCHOR=""
+          for T in "ts/v$V" "go/v$V"; do
+            case "$T" in
+              go/*) [ "${{ inputs.go }}" = "true" ] || continue ;;
+            esac
+            if C="$(git rev-parse -q --verify "refs/tags/$T^{commit}")"; then
+              [ -n "$ANCHOR" ] || ANCHOR="$C"
+            else
+              MISSING="$MISSING $T"
+            fi
+          done
+          MISSING="$(echo $MISSING)"
+          if [ -z "$MISSING" ]; then
+            echo "::error::every tag this run would create already exists — bump the version first"
+            exit 1
+          fi
+
+          # A REPAIR must name the commit the release actually happened at,
+          # not whatever main has become since. If ts/v landed and go/v did
+          # not, and main moved on, tagging HEAD would leave the two tags
+          # identifying DIFFERENT commits — permanent for the Go module,
+          # because proxy.golang.org caches module versions immutably.
+          HEAD_C="$(git rev-parse HEAD)"
+          if [ -z "$ANCHOR" ]; then
+            ANCHOR="$HEAD_C"
+          elif [ "$ANCHOR" != "$HEAD_C" ]; then
+            if ! npm view "@tabnas/chess@$V" version >/dev/null 2>&1; then
+              echo "::error::$V is tagged at $ANCHOR but is not on npm — publishing would ship HEAD while the tags name an older commit; resolve by hand"
+              exit 1
+            fi
+            echo "repairing an earlier release: anchoring to $ANCHOR (HEAD has moved on)"
+          fi
+          echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+          echo "anchor=$ANCHOR" >> "$GITHUB_OUTPUT"
+          echo "will create:$MISSING at $ANCHOR"
+
+      - name: Publish to npm if the version is missing (OIDC)
         working-directory: ts
         run: |
+          V="${{ steps.v.outputs.version }}"
           npm install -g npm@latest
-          npm i
-          npm run build --if-present
-          npm publish --access public
+          if npm view "@tabnas/chess@$V" version >/dev/null 2>&1; then
+            echo "@tabnas/chess@$V is already on npm — skipping publish"
+          else
+            npm i
+            npm run build --if-present
+            npm publish --access public
+          fi
+
+      - name: Tag the release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for T in ${{ steps.tags.outputs.missing }}; do
+            git tag "$T" "${{ steps.tags.outputs.anchor }}"
+          done
+          git push --atomic origin ${{ steps.tags.outputs.missing }}
 
   # @tabnas/chess-game, the bundled <chess-game> web component in web/.
   # It carries its own version line and its own tag (`web/v*`) rather than
@@ -45,6 +156,8 @@ jobs:
   # the BUNDLE changes — a new parser, a board fix — which is not the same
   # event as a grammar release. admin/publish.sh therefore covers ts/ and
   # go/ only, and this job is how the component ships.
+  #
+  # Tag-push only, deliberately — see the header.
   publish-web:
     if: startsWith(github.ref, 'refs/tags/web/v')
     runs-on: ubuntu-latest
@@ -52,8 +165,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
