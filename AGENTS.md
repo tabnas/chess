@@ -264,6 +264,17 @@ the workflow creates both tags itself, in one atomic push, *after* npm
 accepts the publish. Pushing a tag by hand is the orchestrator's path
 (`admin/publish.sh`), not yours.
 
+**This releases the LIBRARY only — not the web component.** `publish-web`
+is gated on `if: startsWith(github.ref, 'refs/tags/web/v')`, so a dispatch
+on `main` runs the library jobs and skips it entirely. That split is
+deliberate, and the workflow header says why: the component is a built
+artifact whose version tracks bundle changes, not grammar releases, so one
+dispatch input cannot mean both without letting a library release quietly
+republish an unchanged component. Shipping the component means pushing a
+`web/vX.Y.Z` tag — which a session cannot do either, for the same 403 —
+so it is a maintainer hand-over. Do not report a dispatch as having
+released the component.
+
 The steps, in order:
 
 1. Bump all **three** version sites together — `ts/package.json`, `VERSION`
