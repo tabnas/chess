@@ -19,7 +19,7 @@ const {
 
 ### `Chess`
 
-A Tabnas plugin. Install it on a bare engine — it is not a jsonic
+A Tabnas plugin. Install it on a bare engine; it is not a jsonic
 extension, and needs no other grammar underneath.
 
 ```js
@@ -31,7 +31,7 @@ const tn = new Tabnas().use(Chess)
 tn.parse('1. e4 *')[0].result // => '*'
 ```
 
-`tn.parse(src)` then returns whatever the configured start rule builds — by
+`tn.parse(src)` then returns whatever the configured start rule builds, by
 default a `Game[]`.
 
 ### `VERSION`
@@ -78,15 +78,15 @@ Six things are import-only:
 
 | Written | Export format | Section |
 |---|---|---|
-| `0-0`, `0-0-0` | `O-O`, `O-O-O` — the letter, not the digit | 8.2.3.3 |
-| `Pe4` | `e4` — no pawn letter | 8.2.3.2 |
-| `e8Q` | `e8=Q` — promotion takes an equal sign | 8.2.3.3 |
-| `e4!`, `e4??` | `e4 $1`, `e4 $4` — glyphs, not suffixes | 8.2.3.8 |
-| `e4++` | `e4+` — there is no double-check marking | 8.2.3.5 |
+| `0-0`, `0-0-0` | `O-O`, `O-O-O`, the letter, not the digit | 8.2.3.3 |
+| `Pe4` | `e4`, no pawn letter | 8.2.3.2 |
+| `e8Q` | `e8=Q`, promotion takes an equal sign | 8.2.3.3 |
+| `e4!`, `e4??` | `e4 $1`, `e4 $4`, glyphs, not suffixes | 8.2.3.8 |
+| `e4++` | `e4+`, there is no double-check marking | 8.2.3.5 |
 | `$999` | `$0` … `$255` | 8.2.4 |
 
-Everything else — free layout, missing move numbers, a missing termination
-marker, superfluous move numbers — is accepted by both, because the standard
+Everything else (free layout, missing move numbers, a missing termination
+marker, superfluous move numbers) is accepted by both, because the standard
 does not require otherwise.
 
 ## Functions
@@ -96,7 +96,7 @@ does not require otherwise.
 Parse a PGN database. Throws on malformed notation; returns `[]` for empty
 source.
 
-`options` is `DatabaseOptions` — `ChessOptions` without `start`. These two
+`options` is `DatabaseOptions`, which is `ChessOptions` without `start`. These two
 functions parse a database and their return types say so, so the start rule
 is fixed at `pgn` (in the types, and at run time for callers who have
 none). Install the plugin directly for another entry rule.
@@ -123,7 +123,7 @@ parseGame('')                        // => undefined
 ### `parseSan(src, options?) => Move | undefined`
 
 Take a single SAN move string apart. Returns `undefined` rather than
-throwing when `src` is not a move — the whole string must be one move, so a
+throwing when `src` is not a move: the whole string must be one move, so a
 prefix match does not count.
 
 ```js
@@ -165,19 +165,19 @@ notation instead of about character classes:
 | `unprintable` | a tag value runs past the end of its line | a tag value cannot contain a line break |
 
 Those four are the whole set this grammar can reach. The engine still
-frames them — it names the file, row and column, and quotes the line.
+frames them: it names the file, row and column, and quotes the line.
 
 Each has a longer `hint` behind it, which the engine prints under the
 source excerpt. Both are set through the engine's own `error` and `hint`
 options, so a caller who wants different wording can override them the
-same way — the plugin sets them, it does not own them.
+same way: the plugin sets them, it does not own them.
 
 ### Colour
 
 `parse` and `parseGame` colour an error **only** when standard output is a
 real terminal, and never when `NO_COLOR` is set. The engine's own default
 is to colour unconditionally, which is right for a terminal and wrong in a
-browser, a log file or a CI transcript — in a browser the escape codes are
+browser, a log file or a CI transcript; in a browser the escape codes are
 visible noise.
 
 This applies to those two functions only. Building the engine by hand
@@ -211,17 +211,17 @@ the notation did not state is absent, never guessed.
 
 | Field | Type | Present when |
 |---|---|---|
-| `san` | string | always — the move verbatim, minus any suffix annotation |
-| `piece` | `'P' \| 'N' \| 'B' \| 'R' \| 'Q' \| 'K'` | always — `P` for a pawn move, `K` for castling |
-| `to` | string | always except castling — the destination square, e.g. `'e4'` |
+| `san` | string | always, the move verbatim, minus any suffix annotation |
+| `piece` | `'P' \| 'N' \| 'B' \| 'R' \| 'Q' \| 'K'` | always, `P` for a pawn move, `K` for castling |
+| `to` | string | always except castling, the destination square, for example `'e4'` |
 | `disambiguation` | `{ file?: string, rank?: number }` | the notation stated part of the origin (8.2.3.4), including the file of a capturing pawn |
 | `capture` | `true` | the move is written as a capture |
 | `promotion` | `'N' \| 'B' \| 'R' \| 'Q'` | the move promotes |
 | `castle` | `'king' \| 'queen'` | the move is castling |
 | `check` | `'+' \| '#'` | a check or checkmate indicator was written (8.2.3.5) |
 | `annotation` | `'!' \| '?' \| '!!' \| '??' \| '!?' \| '?!'` | a suffix annotation was written (8.2.3.8) |
-| `number` | number | in a game or movetext — the fullmove number |
-| `side` | `'w' \| 'b'` | in a game or movetext — the side that played it |
+| `number` | number | in a game or movetext, the fullmove number |
+| `side` | `'w' \| 'b'` | in a game or movetext, the side that played it |
 | `nags` | `number[]` | glyphs follow the move |
 | `comments` | `Comment[]` | comments follow the move |
 | `variations` | `Line[]` | variations follow the move |
@@ -249,7 +249,7 @@ A `Line`, plus the two things only a game has.
 
 | Field | Type | Present when |
 |---|---|---|
-| `tags` | `Record<string, string>` | always — may be empty |
+| `tags` | `Record<string, string>` | always, may be empty |
 | `result` | `'1-0' \| '0-1' \| '1/2-1/2' \| '*'` | a termination marker was written |
 
 Tag values are raw strings, in the order the file wrote them. A repeated tag
@@ -259,8 +259,8 @@ name keeps the first value (8.1 says a name should not repeat).
 
 | Field | Type | Present when |
 |---|---|---|
-| `kind` | `'brace' \| 'line'` | always — `{…}` or `;…` |
-| `text` | string | always — the body verbatim, markup and whitespace included |
+| `kind` | `'brace' \| 'line'` | always, `{…}` or `;…` |
+| `text` | string | always, the body verbatim, markup and whitespace included |
 | `commands` | `Command[]` | `commands` is on and the body holds `[%…]` markup |
 
 ### `Command`
@@ -274,8 +274,8 @@ name keeps the first value (8.1 says a name should not repeat).
 
 The syntax is the [PGN Specification
 Supplement](https://www.ficsgames.org/pgnsupp.txt)'s (final draft, 2001),
-not the 1994 standard's. An operand is either **bare** — any character but
-a comma or a right bracket, trimmed — or a **double-quoted string**, which
+not the 1994 standard's. An operand is either **bare** (any character but
+a comma or a right bracket, trimmed) or a **double-quoted string**, which
 may contain both and keeps its content without its quotes:
 
 ```js
@@ -284,7 +284,7 @@ parseGame('1. e4 {[%src "Lasker, Common Sense in Chess"]} *')
 // => [{ name: 'src', args: ['Lasker, Common Sense in Chess'] }]
 ```
 
-Empty operands — from `a,,b`, or a trailing comma — contribute nothing. A
+Empty operands (from `a,,b`, or a trailing comma) contribute nothing. A
 command that never closes is not a command: it stays in `text` as prose,
 which is what the supplement asks of a reader that cannot make sense of
 one.
@@ -316,13 +316,13 @@ A `%` in the **first column** escapes the rest of the line (section 6); a
 
 A token ends before the first character that cannot continue a symbol
 (section 7), so `e2e4` is one bad token rather than the two moves `e2` and
-`e4` — and likewise `12e4` is not the move number `12` followed by `e4`.
+`e4`, and likewise `12e4` is not the move number `12` followed by `e4`.
 The one exception is the asterisk, which section 7 makes a token by itself
 and self-terminating, so `*1. e4` is a finished game and then another.
 
-Two bounds follow from the same section. A move number starts at 1 —
-section 8.2.2 says the indication gives the number of the move that
-follows, and there is no move zero — and neither a move number nor a glyph
+Two bounds follow from the same section. A move number starts at 1
+(section 8.2.2 says the indication gives the number of the move that
+follows, and there is no move zero), and neither a move number nor a glyph
 value may run past nine digits, which is far beyond any real game and keeps
 an absurd literal away from the number parser.
 
@@ -348,7 +348,7 @@ as a railroad diagram in [`grammar.svg`](grammar.svg) and
 Move **legality** is not checked, and cannot be: there is no board here. A
 syntactically perfect move to an impossible square parses fine.
 
-Not implemented: FEN and EPD as standalone documents (16.1, 16.2) — the
+Not implemented: FEN and EPD as standalone documents (16.1, 16.2). The
 `FEN` *tag* is read for its side-to-move and fullmove number, but its value
 stays a raw string. Also not implemented: the non-standard `--` / `Z0` null
 move and `(=)` draw offer that some tools emit.

@@ -7,7 +7,7 @@
 [![tabnas standard](https://tabnas.github.io/status/badges/chess-standard.svg)](https://tabnas.github.io/status/)
 <!-- /tabnas-badges -->
 
-### 👉 [See it working — tabnas.github.io/chess](https://tabnas.github.io/chess/)
+### [See it working: tabnas.github.io/chess](https://tabnas.github.io/chess/)
 
 A live board you can step through, edit and take apart, with every option
 demonstrated. It is the fastest way to see what this is.
@@ -45,7 +45,7 @@ go get github.com/tabnas/chess/go@latest
 
 ## One tiny example
 
-**TypeScript** — the plugin layers onto a Tabnas engine:
+**TypeScript.** The plugin layers onto a Tabnas engine:
 
 ```js
 const { Tabnas } = require('@tabnas/parser')
@@ -75,7 +75,7 @@ capture.to             // => 'd5'
 capture.disambiguation // => ({ file: 'e' })
 ```
 
-**Go** — `chess.Parse` is the one-call entry point:
+**Go.** `chess.Parse` is the one-call entry point:
 
 ```go
 import chess "github.com/tabnas/chess/go"
@@ -86,7 +86,7 @@ db, _ := chess.Parse("1. e4 e5 *")
 
 ## What you get back
 
-A plain, JSON-serialisable game model — no classes, no cycles, nothing to
+A plain, JSON-serialisable game model: no classes, no cycles, nothing to
 unwrap:
 
 ```js
@@ -101,7 +101,7 @@ game.moves[0].comments[0].text           // => 'Best by test.'
 game.moves[1].variations[0].moves[0].san // => 'c5'
 ```
 
-Each move is decomposed into the vocabulary the PGN standard itself uses —
+Each move is decomposed into the vocabulary the PGN standard itself uses:
 piece, disambiguation, capture, destination, promotion, check indicator:
 
 ```js
@@ -129,20 +129,20 @@ this way, and how it compares with the alternatives.
 [PGN standard](https://www.chessprogramming.org/Portable_Game_Notation)
 (Steven J. Edwards, 1994), section by section:
 
-| Section | Feature | |
+| Section | Feature | Implemented |
 |---|---|---|
-| 4, 7 | Character codes and token classes | ✅ |
-| 5 | Brace `{…}` and rest-of-line `;…` commentary | ✅ kept, not discarded |
-| 6 | The `%` escape mechanism (first column only) | ✅ |
-| 8.1 | Tag pairs, with `\"` and `\\` string escapes | ✅ raw string values |
-| 8.2.2 | Move number indications | ✅ counted where unwritten |
-| 8.2.3 | SAN moves, in full | ✅ decomposed |
-| 8.2.4 | Numeric annotation glyphs | ✅ |
-| 8.2.5 | Recursive annotation variations | ✅ nested |
-| 8.2.6 | Game termination markers | ✅ |
-| 9.7 | The `FEN` tag, read for the starting move and side | ✅ |
-| 18 | Databases: many games in one source | ✅ |
-| 3 | Import format (lax) and export format (strict) | ✅ `strict` option |
+| 4, 7 | Character codes and token classes | yes |
+| 5 | Brace `{…}` and rest-of-line `;…` commentary | yes, kept, not discarded |
+| 6 | The `%` escape mechanism (first column only) | yes |
+| 8.1 | Tag pairs, with `\"` and `\\` string escapes | yes, raw string values |
+| 8.2.2 | Move number indications | yes, counted where unwritten |
+| 8.2.3 | SAN moves, in full | yes, decomposed |
+| 8.2.4 | Numeric annotation glyphs | yes |
+| 8.2.5 | Recursive annotation variations | yes, nested |
+| 8.2.6 | Game termination markers | yes |
+| 9.7 | The `FEN` tag, read for the starting move and side | yes |
+| 18 | Databases: many games in one source | yes |
+| 3 | Import format (lax) and export format (strict) | yes, `strict` option |
 
 Plus one thing the 1994 standard does not define. The `[%clk 0:05:00]` /
 `[%eval …]` / `[%cal …]` markup that lichess, chess.com and ChessBase put
@@ -150,7 +150,7 @@ inside comments is parsed into `Comment.commands`, with the comment text
 still kept verbatim. Its grammar comes from the
 [PGN Specification Supplement](https://www.ficsgames.org/pgnsupp.txt)
 (final draft, 2001), which defines the `[%name operand,operand]` syntax
-and four time commands — `clk`, `egt`, `emt`, `mct`. Everything else
+and four time commands: `clk`, `egt`, `emt`, `mct`. Everything else
 borrows the syntax without being in it, so this parses the syntax and
 interprets none of the names.
 
@@ -161,7 +161,7 @@ comma and the right bracket a bare one may not, so in
 one operand, not two.
 
 **Not included, deliberately:** move legality. Nothing here knows the rules
-of chess, so `1. Qh8` parses happily and `1. e9` does not — the first is a
+of chess, so `1. Qh8` parses happily and `1. e9` does not: the first is a
 well-formed move, the second is not a move at all. Feed the output to a
 board library if you need the difference. Also out of scope: FEN and EPD as
 standalone documents (sections 16.1 and 16.2), and the non-standard `--`
@@ -179,20 +179,20 @@ notation highlighted move by move.
 <chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>
 ```
 
-One tag, no dependencies, no second request — or `npm install
+One tag, no dependencies, no second request, or `npm install
 @tabnas/chess-view` for a bundler, types included.
 
 ![the component showing the Immortal Game](web/doc/screenshot.png)
 
 It is also where the parser's one hard limit becomes concrete. `Nf3` names
 a piece and a destination, and a parser with no board cannot know *which*
-knight — so the component supplies the missing half, a small legal move
+knight, so the component supplies the missing half, a small legal move
 generator that resolves each parsed move against the running position. See
 [`web/README.md`](web/README.md).
 
 ## Documentation
 
-Full documentation follows the [Diátaxis](https://diataxis.fr) framework —
+Full documentation follows the [Diátaxis](https://diataxis.fr) framework:
 one file per quadrant:
 
 | | |
@@ -211,8 +211,8 @@ Package hubs: [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md).
 
 The grammar is defined once in the top-level
 [`chess-grammar.jsonic`](chess-grammar.jsonic) and embedded into **both**
-implementations — TypeScript ([`ts/src/chess.ts`](ts/src/chess.ts)) and Go
-([`go/chess.go`](go/chess.go)) — by
+implementations, TypeScript ([`ts/src/chess.ts`](ts/src/chess.ts)) and Go
+([`go/chess.go`](go/chess.go)), by
 [`ts/embed-grammar.js`](ts/embed-grammar.js) during the TypeScript build.
 Edit the grammar there, not in the generated sources.
 
