@@ -365,7 +365,10 @@ describe('docs-style', () => {
         if (line.includes('—')) {
           faults.push(`${page}:${i + 1}: em dash in page prose`)
         }
-        if (/\p{Extended_Pictographic}/u.test(line)) {
+        // Emoji_Presentation, not Extended_Pictographic: a page's
+        // external-link arrow and its dagger are typographic marks that
+        // render as text, and the ban is on decorative colour emoji.
+        if (/\p{Emoji_Presentation}/u.test(line)) {
           faults.push(`${page}:${i + 1}: emoji in page prose`)
         }
         for (const [re, src] of BANNED) {
