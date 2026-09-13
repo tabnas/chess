@@ -11,14 +11,14 @@ is the one you will live with, so it comes first.
 
 ## 1. The data structure
 
-### What a notation parser can honestly return
+### What a notation parser can truthfully return
 
 A chess move means two different things depending on what you know.
 
 To a chess *engine*, `Nf3` is a transition: a knight moves from g1 to f3.
 That reading needs the board. `chess.js` returns
 `{ color, from, to, flags, piece, san }`, and `python-chess` returns
-`Move(from_square, to_square, promotion)` — both can fill in `from` because
+`Move(from_square, to_square, promotion)`; both can fill in `from` because
 both generate the legal moves of the current position first and match the
 notation against them. `python-chess` is explicit that this is a
 position-dependent operation: `parse_san` raises `IllegalMoveError` and
@@ -31,27 +31,27 @@ Everything below follows from taking that seriously. **The model says what
 the notation said, and nothing else.** No field is inferred from chess rules;
 `disambiguation` holds as much of the origin square as was written, and where
 nothing was written, nothing is there. A consumer that wants the engine
-reading can compute it — the reverse, recovering what was actually on the
+reading can compute it. The reverse, recovering what was actually on the
 page from a resolved move, is impossible.
 
 ### The shapes on offer
 
 Four models are in circulation for board-free chess notation:
 
-**A flat token list** — `[{type:'move'}, {type:'nag'}, …]`. Faithful and
+**A flat token list**, `[{type:'move'}, {type:'nag'}, …]`. Faithful and
 trivial to produce, but every consumer has to reassemble variations from
 parenthesis events, and every consumer does it slightly differently.
 
-**A concrete syntax tree** — the engine's own `{rule, src, kids}`. Complete,
+**A concrete syntax tree**, the engine's own `{rule, src, kids}`. Complete,
 and useless without a second pass; the interesting content sits three
 levels down under rules named after grammar bookkeeping.
 
-**A linked game tree with node ids** — `kokopu` and editor-oriented
+**A linked game tree with node ids**. `kokopu` and editor-oriented
 libraries do this, because an editor needs to insert and delete nodes.
 Excellent for that, but it is a graph: it does not serialise to JSON without
 a scheme for the links, and it is more machinery than a reader needs.
 
-**A move-centric tree** — a list of moves, each carrying its own
+**A move-centric tree**: a list of moves, each carrying its own
 annotations and its own variations. `@mliebelt/pgn-parser` (the widely used
 board-free JS parser), `cm-pgn`, `chess.js`'s history and `python-chess`'s
 `GameNode` all converge on it, from independent starting points.
@@ -93,7 +93,7 @@ are deliberate:
 
 4. **One comment list.** Three comment fields force every consumer to
    remember which is which, and the structured `[%…]` markup is not a
-   different *kind* of comment — it is content inside one. Here a comment is
+   different *kind* of comment; it is content inside one. Here a comment is
    `{ kind, text, commands? }`: `text` is always the body verbatim, and
    `commands` is additive.
 
@@ -113,8 +113,8 @@ The model is lossless with respect to the notation, which is what makes the
 round-trip in [guide.md](guide.md#write-notation-back-out) short: `san` is
 the move verbatim, comment `text` keeps its markup and whitespace, glyphs
 keep their numbers, suffix annotations keep their exact spelling, and
-variations keep their nesting. What is *not* preserved is layout — line
-breaks and spacing between tokens — because the standard says layout carries
+variations keep their nesting. What is *not* preserved is layout (line
+breaks and spacing between tokens) because the standard says layout carries
 no meaning (8.2.1).
 
 ### Where an annotation belongs
@@ -123,7 +123,7 @@ A comment, glyph or variation attaches to **the move it follows**. That is
 the reading chess writers intend (`1. e4 {Best by test}` is about `e4`) and
 the one every other library takes.
 
-The awkward case is an annotation with no move before it — a foreword before
+The awkward case is an annotation with no move before it: a foreword before
 the first move, or `1. e4 ({a note})`. Dropping it would break losslessness
 and mis-attaching it would be a lie, so a `Line` carries `comments`, `nags`
 and `variations` of its own for exactly this: annotations of the *starting
@@ -141,7 +141,7 @@ a move sits, so the parser counts: play alternates from the starting side,
 a written move number resynchronises the count, and `...` versus `.`
 resynchronises the side.
 
-The starting point comes from the `FEN` tag where there is one — section 9.7
+The starting point comes from the `FEN` tag where there is one; section 9.7
 says that tag is how a game declares it does not begin from the initial
 array, and fields 2 and 6 of a FEN record are the active colour and the
 fullmove number. A game that starts at move 12 with Black to move reports
@@ -150,7 +150,7 @@ back to move 1, White.
 
 This is bookkeeping, not chess: it never consults the position. Inside a
 variation the count starts from the move being *replaced*, because that is
-what a variation is (8.2.5) — `1. e4 e5 (1... c5)` gives the `c5` number 1,
+what a variation is (8.2.5): `1. e4 e5 (1... c5)` gives the `c5` number 1,
 side `b`.
 
 ### Raw tag values
@@ -158,7 +158,7 @@ side `b`.
 Tag values stay strings. `@mliebelt/pgn-types` parses `Date` into
 `{value, year, month, day}` and `TimeControl` into
 `{kind, moves, seconds, increment}`, which is convenient right up to the
-first `"1992.??.??"` — a spelling section 9.5 explicitly blesses — or the
+first `"1992.??.??"` (a spelling section 9.5 explicitly blesses) or the
 first tag whose value your program cares about and the parser has never
 heard of.
 
@@ -167,7 +167,7 @@ parser's output depend on a table of tag names that the standard itself
 calls open-ended (section 9). So `tags` is `Record<string, string>`, in file
 order, escapes decoded, and nothing else.
 
-The one exception is `FEN`, read for the starting move number and side —
+The one exception is `FEN`, read for the starting move number and side,
 and even there the tag's value is handed on unchanged.
 
 ---
@@ -185,8 +185,8 @@ san-move    = [ piece ] [ disambig ] [ capture ] square [ promotion ] [ check ]
 
 It does not work, for two independent reasons.
 
-**Whitespace is load-bearing.** The tabnas lexer skips whitespace between
-tokens, so a character-level rule never sees it — and `Nb1 d2` (two moves)
+**Whitespace carries meaning.** The tabnas lexer skips whitespace between
+tokens, so a character-level rule never sees it, and `Nb1 d2` (two moves)
 would parse identically to `Nb1d2` (one disambiguated move). The space is
 the *only* thing distinguishing them, and a scannerless grammar has already
 thrown it away.
@@ -198,12 +198,12 @@ later. The engine does not backtrack, so the grammar would have to be
 hand-factored into something unrecognisable as chess notation.
 
 Both problems vanish once you notice the PGN standard has already answered
-the question: section 7 classifies a SAN move as a **symbol token** — one
+the question: section 7 classifies a SAN move as a **symbol token**: one
 contiguous, self-delimiting run of characters. So a move is lexed whole, by
 one regular expression, and the grammar handles only what is actually
 recursive: games, tag pairs, variations.
 
-That split — regular things in the lexer, recursive things in the grammar —
+That split (regular things in the lexer, recursive things in the grammar)
 is what the engine is built for, and it is why the whole grammar is
 [nine short rules](../../chess-grammar.jsonic).
 
@@ -222,40 +222,40 @@ was.
 
 Tabnas gates a custom match-token matcher on the token columns the active
 alternates declare: a matcher only runs where some alternate says it could
-match. That gives context-sensitive lexing for free — `Event` is a tag name
+match. That gives context-sensitive lexing for free: `Event` is a tag name
 inside `[…]` and a lex error in the movetext, with no grammar contortions.
 
 The cost is that **every alternate must name the tokens it expects**,
 including the ones it only wants to hand back to its parent. That is why the
-grammar is full of `{ s: '#EEND' b: 1 }`: the rule is declaring "I might see
-a result marker here, and if I do, I am done with it" so that the lexer will
-even try.
+grammar is full of `{ s: '#EEND' b: 1 }`: the alternate declares that a
+result marker may appear here and that seeing one ends the rule, which is
+what makes the lexer try for it at all.
 
 Three matchers are registered outside that mechanism, in the `lex.match`
 registry, because they are *not* context-sensitive: `{`, `;` and a
 first-column `%` mean the same thing wherever they appear. Being
-hand-written also lets them keep the row and column counters honest across a
+hand-written also lets them keep the row and column counters correct across a
 comment that spans lines, so a parse error later in the file still names the
 right place.
 
 ### PGN comments are content, not whitespace
 
 The engine has a comment matcher, and comments it produces land in the
-`IGNORE` token set — the parser never sees them. That is right for a
+`IGNORE` token set, so the parser never sees them. That is right for a
 programming language and wrong here: `{Best by test.}` is the reason the
 file exists.
 
 So the engine's comment lexing is switched off entirely, and PGN's two
 comment styles are ordinary tokens (`#CMT`, `#RMK`) that the grammar keeps.
-The only thing genuinely discarded is the section 6 escape mechanism — a
-first-column `%` — which the standard defines as ignorable by exactly this
+The only thing genuinely discarded is the section 6 escape mechanism (a
+first-column `%`) which the standard defines as ignorable by exactly this
 kind of software. It is lexed as `#CM` and therefore dropped, which is the
 one case where the engine's default is what PGN wants.
 
 ### `[%clk …]` markup
 
 The `[%name arg,arg]` convention inside comments is not in the standard at
-all — it comes from ChessBase and is now emitted by lichess and chess.com on
+all: it comes from ChessBase and is now emitted by lichess and chess.com on
 essentially every game with a clock. Ignoring it would make the parser
 useless on the largest corpus of PGN in existence.
 
@@ -269,7 +269,7 @@ parsing off.
 Section 8.2.6 says each movetext section has exactly one termination marker,
 but import-format files often omit it, so "the marker" cannot be the only
 signal. The grammar therefore ends a game at a termination marker **or** at
-a tag pair, because a tag section only ever precedes its own movetext — a
+a tag pair, because a tag section only ever precedes its own movetext; a
 `[` after the moves have started belongs to the next game.
 
 That rule is enforced by a condition on one alternate rather than by
@@ -307,7 +307,7 @@ grammar, and a file that omits them still parses correctly.
 The TypeScript and Go packages are not two parsers that happen to agree.
 The grammar is authored once, in
 [`chess-grammar.jsonic`](../../chess-grammar.jsonic), and compiled into
-both sources as JSON at build time — so neither runtime can quietly grow a
+both sources as JSON at build time, so neither runtime can silently grow a
 rule the other lacks. The conformance fixtures in
 [`test/spec/`](../../test/spec/) are shared the same way: both runners list
 that directory and run every `.tsv` in it, comparing after a JSON
@@ -324,6 +324,6 @@ What is necessarily per-runtime is the lexer, because a lexer is code:
 - `Game` embeds `Line` anonymously rather than extending it, which is what
   makes the two marshal to the same JSON object.
 
-None of those is visible in the output — which is the point, and what the
+None of those is visible in the output, which is the point, and what the
 shared fixtures exist to keep true. TypeScript is canonical: where the two
 disagree, TS is right and Go is the bug.

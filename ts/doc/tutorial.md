@@ -87,7 +87,7 @@ game.tags.Result // => '1/2-1/2'
 ```
 
 Tag values stay exactly as written. Turning `"1992.11.04"` into a date is a
-job for your code, not the parser's — see
+job for your code, not the parser's; see
 [concepts.md](concepts.md#raw-tag-values).
 
 ## 5. Follow the annotations
@@ -165,8 +165,8 @@ const tn = new Tabnas().use(Chess, { strict: true })
 tn.parse('1. e4 O-O *')[0].moves[1].castle // => 'king'
 ```
 
-That `strict: true` asks for export-format notation only. Import format —
-the default — accepts what people actually type:
+That `strict: true` asks for export-format notation only. Import format,
+the default, accepts what people actually type:
 
 ```js
 const { Tabnas } = require('@tabnas/parser')
@@ -182,8 +182,8 @@ castling with the letter O.
 
 ## Where next
 
-- [guide.md](guide.md) — recipes: streaming a large file, pulling clock
+- [guide.md](guide.md). Recipes: streaming a large file, pulling clock
   times out of comments, walking variations, writing notation back out.
-- [reference.md](reference.md) — every option, every type, every export.
-- [concepts.md](concepts.md) — why the model looks like this, and how the
+- [reference.md](reference.md). Every option, every type, every export.
+- [concepts.md](concepts.md). Why the model looks like this, and how the
   grammar is put together.

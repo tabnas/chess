@@ -13,7 +13,7 @@ npm install @tabnas/parser @tabnas/chess
 ```
 
 `@tabnas/parser` is a peer dependency. No other grammar is needed
-underneath — this plugin installs on a bare engine.
+underneath; this plugin installs on a bare engine.
 
 ## Use
 
@@ -44,12 +44,12 @@ parseSan('O-O-O').castle               // => 'queen'
 
 Four-quadrant [Diátaxis](https://diataxis.fr) docs:
 
-- [tutorial.md](doc/tutorial.md) — learning-oriented: zero to a working
+- [tutorial.md](doc/tutorial.md). Learning-oriented: zero to a working
   parser, step by step.
-- [guide.md](doc/guide.md) — task-oriented recipes for real problems.
-- [reference.md](doc/reference.md) — the exact API surface, options and
+- [guide.md](doc/guide.md). Task-oriented recipes for real problems.
+- [reference.md](doc/reference.md). The exact API surface, options and
   notation accepted.
-- [concepts.md](doc/concepts.md) — the data model, the grammar, and why both
+- [concepts.md](doc/concepts.md). The data model, the grammar, and why both
   look the way they do.
 
 ## Build and test
@@ -62,7 +62,7 @@ npm test               # node --test dist-test/*.test.js
 
 `npm run build` embeds [`../chess-grammar.jsonic`](../chess-grammar.jsonic)
 into `src/chess.ts` first. Never hand-edit between the `BEGIN/END EMBEDDED`
-markers — edit the grammar and re-run `npm run embed`.
+markers; edit the grammar and re-run `npm run embed`.
 
 ## License
 

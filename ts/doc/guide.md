@@ -16,8 +16,8 @@ parseSan('exd5').capture // => true
 parseSan('e9')           // => undefined
 ```
 
-To get the same thing through the engine — with a parse *error* rather than
-`undefined`, and with the position reported — use the `move` start rule.
+To get the same thing through the engine (with a parse *error* rather than
+`undefined`, and with the position reported) use the `move` start rule.
 (`parse` and `parseGame` do not take `start`: they parse a database, and
 their return types say so.)
 
@@ -194,7 +194,7 @@ found.length          // => 2
 found[1].tags.W       // => 'b'
 ```
 
-That split is a heuristic about *layout*, not grammar — it works because
+That split is a heuristic about *layout*, not grammar; it works because
 export-format PGN puts a blank line before every tag section (8.2.1). Where
 layout cannot be trusted, `parse` on the whole source is the correct answer:
 the grammar starts a new game at a tag pair regardless of whitespace.
@@ -239,5 +239,5 @@ require('node:fs').writeFileSync('grammar.svg', tn.railroad.toSvg())
 ```
 
 That is exactly how [`grammar.svg`](grammar.svg) and
-[`grammar.txt`](grammar.txt) are generated — from the live grammar, never by
+[`grammar.txt`](grammar.txt) are generated from the live grammar, never by
 hand.

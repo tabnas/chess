@@ -70,7 +70,7 @@ chess.Make(chess.Options{Strict: true})
 
 ## Differences from the TypeScript implementation
 
-The **model and the accepted notation are identical** — that is what the
+The **model and the accepted notation are identical**: that is what the
 shared fixtures pin. Three things differ because the languages do:
 
 1. **`Parse` returns `Database` (a slice), and the engine's node is
@@ -84,7 +84,7 @@ shared fixtures pin. Three things differ because the languages do:
    no `(?!…)`, so the PGN section 7 rule that a symbol token ends before
    the first non-symbol character is a bounds check the matcher runs after
    the match, rather than part of the pattern. Same rule, checked one step
-   later — `e2e4` is rejected in both runtimes.
+   later, and `e2e4` is rejected in both runtimes.
 
 `Options` is also a struct here rather than an object literal, which is
 why turning `Commands` *off* needs `CommandsSet`.
@@ -95,10 +95,10 @@ The four-quadrant [Diátaxis](https://diataxis.fr) docs are shared with the
 TypeScript package; the examples are TypeScript but the model, the
 options and the accepted notation are the same:
 
-- [tutorial.md](../ts/doc/tutorial.md) — zero to a working parser.
-- [guide.md](../ts/doc/guide.md) — recipes for real problems.
-- [reference.md](../ts/doc/reference.md) — options, types, notation accepted.
-- [concepts.md](../ts/doc/concepts.md) — the data model and the grammar,
+- [tutorial.md](../ts/doc/tutorial.md). Zero to a working parser.
+- [guide.md](../ts/doc/guide.md). Recipes for real problems.
+- [reference.md](../ts/doc/reference.md). Options, types, notation accepted.
+- [concepts.md](../ts/doc/concepts.md). The data model and the grammar,
   and why both look the way they do.
 
 ## Build and test
