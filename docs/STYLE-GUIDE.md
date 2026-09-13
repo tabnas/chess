@@ -290,6 +290,34 @@ that names a thing.
   misspellings are still caught: `Vale.Spelling` runs at error against
   `accept.txt`.
 
+## Published pages
+
+A repository that publishes a page has prose no Diataxis quadrant
+describes. `web/demo.html` is a landing page: read once, in order, by
+somebody deciding whether to use the component, and written in a
+lighter register than the reference pages.
+
+The rules that reach such a page are the ones about the words: the
+punctuation rulings, the banned list, and the emoji ban. The rules that
+do not are the ones about placement and document kind, so the
+tutorial-only limits on "we" and on exclamation marks do not apply. A
+published page is neither a tutorial nor a reference page, and flattening
+its register to one of those would make it a worse page without making
+it a more accurate one.
+
+`ts/test/docs.test.js`
+`published-pages-follow-the-punctuation-rulings` carries this.
+Vale does not: it strips the markup before matching, so a
+`<chess-view>`'s PGN reaches it as prose and the `{...}`
+annotations and player names inside come back as errors. The
+element boundary the skip needs is gone by then, and the local
+gate keeps it.
+
+Content inside `<chess-view>`, `<pre>`, `<code>`, `<kbd>`,
+`<script>` and `<style>` is not page prose. It keeps its own
+punctuation, the same exemption literal code and quoted output
+have above.
+
 ## Code snippets
 
 A fenced JavaScript or Go example that states a result carries that

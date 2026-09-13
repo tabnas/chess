@@ -213,6 +213,36 @@ function sourceText(src) {
 }
 
 
+// The pages this repository PUBLISHES, as committed HTML. They are not
+// documentation in the Diataxis sense and the guide's placement and
+// tutorial-only rules do not reach them, but the punctuation rulings,
+// the banned list and the emoji ban do. See docs/STYLE-GUIDE.md,
+// "Published pages".
+//
+// Vale is not the gate here. It strips the markup before matching, so
+// a <chess-view>'s PGN reaches it as prose and its `{...}` annotations
+// and player names are reported as errors; the element boundary the
+// skip needs is gone by then. This check keeps the boundary.
+const PAGES = ['web/demo.html']
+// Element whose TEXT is content rather than page prose.
+const PAGE_CONTENT = /<(chess-view|script|style|pre|code|kbd|textarea)\b[^>]*>[\s\S]*?<\/\1>/gi
+
+
+// Blanked, not deleted: a reported line number has to be the line the
+// author will find, and a <chess-view> spans a dozen of them.
+function blank(m) {
+  return m.replace(/[^\n]/g, ' ')
+}
+
+
+function pageProse(html) {
+  return html
+    .replace(PAGE_CONTENT, blank)
+    .replace(/<!--[\s\S]*?-->/g, blank)
+    .replace(/<[^>]+>/g, blank)
+}
+
+
 function paths() {
   return gatedDocs().map((file) => ({ file, abs: Path.join(REPO, file) }))
 }
@@ -320,6 +350,34 @@ describe('docs-style', () => {
 
     Assert.deepEqual(faults, [],
       `quoted output rewritten (docs/STYLE-GUIDE.md):\n${faults.join('\n')}`)
+  })
+
+  test('published-pages-follow-the-punctuation-rulings', () => {
+    const faults = []
+    for (const page of PAGES) {
+      const abs = Path.join(REPO, page)
+      if (!Fs.existsSync(abs)) {
+        faults.push(`${page}: listed as published but not on disk`)
+        continue
+      }
+      const text = pageProse(Fs.readFileSync(abs, 'utf8'))
+      text.split('\n').forEach((line, i) => {
+        if (line.includes('—')) {
+          faults.push(`${page}:${i + 1}: em dash in page prose`)
+        }
+        if (/\p{Extended_Pictographic}/u.test(line)) {
+          faults.push(`${page}:${i + 1}: emoji in page prose`)
+        }
+        for (const [re, src] of BANNED) {
+          re.lastIndex = 0
+          if (re.test(line)) {
+            faults.push(`${page}:${i + 1}: banned phrase "${src}"`)
+          }
+        }
+      })
+    }
+    Assert.deepEqual(faults, [],
+      `published pages (docs/STYLE-GUIDE.md):\n${faults.join('\n')}`)
   })
 
   test('we-appears-only-in-tutorials', () => {
