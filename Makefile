@@ -8,7 +8,8 @@
 
 .PHONY: all build test clean reset diagram \
         build-ts build-go build-web test-ts test-go test-web \
-        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go
+        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go \
+        prose prose-counts
 
 all: build test
 
