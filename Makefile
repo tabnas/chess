@@ -8,7 +8,8 @@
 
 .PHONY: all build test clean reset diagram \
         build-ts build-go build-web test-ts test-go test-web \
-        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go
+        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go \
+        prose prose-counts
 
 all: build test
 
@@ -85,3 +86,9 @@ reset:
 # `vale sync`. Warnings are advisory, errors fail.
 prose:
 	vale --minAlertLevel=error $$(node ts/scripts/gated-docs.cjs)
+	node ts/scripts/vale-counts.cjs
+
+# Re-measure what .vale.ini and the style guide record, after
+# a change to the pages or to the rules moves the numbers.
+prose-counts:
+	node ts/scripts/vale-counts.cjs --write
