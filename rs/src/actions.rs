@@ -43,7 +43,7 @@ const COUNT_SIDE: &str = "chess:side";
 /// The running `{number, side}` a line counts moves with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Count {
-    number: u32,
+    number: u64,
     side: Side,
 }
 
@@ -150,7 +150,7 @@ fn push_move(node: &mut Value, item: Value) {
 fn count_of(node: &Value) -> Option<Count> {
     let map = as_map(node)?;
     let number = match map.meta.get(COUNT_NUMBER)? {
-        Value::Number(number) => *number as u32,
+        Value::Number(number) => *number as u64,
         _ => return None,
     };
     let side = match map.meta.get(COUNT_SIDE)? {
@@ -192,7 +192,7 @@ fn start_of(node: &Value) -> Count {
     }
     if let Some(number) = field.get(5) {
         if !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) {
-            if let Ok(number) = number.parse::<u32>() {
+            if let Ok(number) = number.parse::<u64>() {
                 if 0 < number {
                     count.number = number;
                 }
@@ -223,7 +223,7 @@ fn last_move_count(node: &Value) -> Option<Count> {
         return None;
     };
     let number = match last.get("number")? {
-        Value::Number(number) => *number as u32,
+        Value::Number(number) => *number as u64,
         _ => return None,
     };
     let side = match last.get("side")? {
@@ -382,8 +382,13 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
                     number: count.number,
                     side: Side::Black,
                 },
+                // Saturating, because the number can come from a `FEN`
+                // tag and PGN spec 9.7 bounds that field nowhere. A
+                // panic here would turn hostile input into an `internal`
+                // diagnostic; JavaScript, counting in doubles, just
+                // keeps going.
                 Side::Black => Count {
-                    number: count.number + 1,
+                    number: count.number.saturating_add(1),
                     side: Side::White,
                 },
             },
@@ -413,7 +418,7 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
         let digits: String = src.chars().take_while(char::is_ascii_digit).collect();
         let mut node = rule.node.borrow_mut();
         let mut count = counter(&mut node);
-        if let Ok(number) = digits.parse::<u32>() {
+        if let Ok(number) = digits.parse::<u64>() {
             count.number = number;
         }
         match src.matches('.').count() {

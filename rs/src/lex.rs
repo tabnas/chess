@@ -23,7 +23,7 @@ use tabnas::{
     Value, TIN_CM,
 };
 
-use crate::san::{ends_token, move_number, nag, result, tag_name};
+use crate::san::{ends_token, move_number, nag, nag_strict, result, tag_name};
 
 /// The token identities this plugin mints, in the order it mints them.
 ///
@@ -115,17 +115,21 @@ fn move_number_matcher() -> impl Fn(&str) -> Option<MatchTokenResult> + Send + S
 }
 
 /// PGN spec 8.2.4: a glyph value is from zero to 255. Import format is
-/// not fussy about that; export format is.
+/// not fussy about that; export format is, and says so in the pattern
+/// rather than in a range check, so that an overlong literal is refused
+/// outright instead of being cut short. The digit boundary is the
+/// `(?!\d)` the canonical pattern ends on, checked one step later.
 fn nag_matcher(strict: bool) -> impl Fn(&str) -> Option<MatchTokenResult> + Send + Sync + 'static {
     move |rest: &str| {
-        let found = nag().find(rest)?;
-        if strict {
-            let value: u32 = found.as_str()[1..].parse().ok()?;
-            if 255 < value {
-                return None;
-            }
+        if !strict {
+            return consumed(rest, nag().find(rest)?.end());
         }
-        consumed(rest, found.end())
+        let found = nag_strict().find(rest)?;
+        let end = found.end();
+        if rest.as_bytes().get(end).is_some_and(u8::is_ascii_digit) {
+            return None;
+        }
+        consumed(rest, end)
     }
 }
 

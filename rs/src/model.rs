@@ -244,8 +244,13 @@ pub struct Move {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotation: Option<Annotation>,
     /// Fullmove number: stated by a move number indication, else counted.
+    ///
+    /// Wide enough that a hostile `FEN` tag cannot overflow the count: PGN
+    /// spec 9.7 puts no bound on that field, and JavaScript counts in
+    /// doubles, so a 32-bit counter would panic where the canonical
+    /// implementation simply keeps going.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub number: Option<u32>,
+    pub number: Option<u64>,
     /// Side to move: implied by the count, or by a `...` indication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<Side>,

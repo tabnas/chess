@@ -54,7 +54,14 @@ pub(crate) fn ends_token(rest: &str, end: usize, extra: &str) -> bool {
 /// `strict` narrows the same template to export format (PGN spec
 /// 8.2.3.7): castling only as `O-O`/`O-O-O`, no `P` pawn prefix, `=`
 /// before a promotion piece, and no suffix annotation.
-pub fn san_pattern(strict: bool) -> Regex {
+///
+/// Crate-private, as in the other two ports, and for a reason worth
+/// stating: on its own this pattern matches the `e2` prefix of `e2e4`.
+/// The section 7 boundary that rejects the pair lives in
+/// [`ends_token`], which the matcher runs afterwards, so the pattern is
+/// half of a rule rather than a validator. [`parse_san`] is the public
+/// way to ask whether a string is a move.
+pub(crate) fn san_pattern(strict: bool) -> Regex {
     let (castle, piece, promote, check, annotation) = if strict {
         ("O-O-O|O-O", "[KQRBN]", "=", "[+#]", "")
     } else {
@@ -105,12 +112,29 @@ pub(crate) fn move_number() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"^[1-9][0-9]{0,8}(?:[ \t]*\.+)?").expect("literal"))
 }
 
-/// Numeric annotation glyph, PGN spec 8.2.4. The value must be 0..255;
-/// import format is not fussy about that, export format is, and that
-/// check lives in the matcher.
+/// Numeric annotation glyph, PGN spec 8.2.4. Import format is not fussy
+/// about the value; nine digits is only a bound on how absurd a literal
+/// may get before it reaches the number parser.
 pub(crate) fn nag() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^\$[0-9]{1,9}").expect("literal"))
+}
+
+/// The export-format glyph, PGN spec 8.2.4: "from zero to 255", written
+/// as one or two digits or as a three-digit value from 100 to 255.
+///
+/// Narrowing the PATTERN rather than range-checking the value is what
+/// makes `$0255` and `$0000000001` the errors they are in export format.
+/// A range check reads those as 255 and 0, accepts a prefix, and hands
+/// the rest of the digits back to the lexer as a move number, which is a
+/// silently wrong parse rather than a refusal. The matcher still has to
+/// check that the glyph is not followed by another digit, which the
+/// canonical implementation writes as a `(?!\d)` lookahead.
+pub(crate) fn nag_strict() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\$(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[0-9][0-9]?)").expect("literal")
+    })
 }
 
 /// Game termination marker, PGN spec 8.2.6.

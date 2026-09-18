@@ -380,7 +380,7 @@ fn a_name_another_language_reserves_is_still_a_tag() {
 
 #[test]
 fn numbering_is_counted_when_unstated() {
-    let counted: Vec<(u32, Side)> = must_game("e4 e5 Nf3 Nc6 *")
+    let counted: Vec<(u64, Side)> = must_game("e4 e5 Nf3 Nc6 *")
         .line
         .moves
         .iter()
@@ -495,6 +495,18 @@ fn line_bookkeeping_never_reaches_the_result() {
     for key in ["number", "side"] {
         assert!(json.contains(key), "expected {key} on the moves: {json}");
     }
+}
+
+/// A hostile `FEN` tag can put the count at the top of a 32-bit range,
+/// and the next move has to advance past it rather than panic. A fixture
+/// pins the value; this pins that the counter is wide enough to reach it
+/// from the typed model, which is where a narrowed field would show up
+/// first.
+#[test]
+fn a_huge_fen_move_number_survives_the_count() {
+    let game = must_game("[FEN \"8/8/8/8/8/8/8/8 b - - 0 4294967295\"]\ne5 Nf3 *");
+    assert_eq!(Some(4_294_967_295), game.line.moves[0].number);
+    assert_eq!(Some(4_294_967_296), game.line.moves[1].number);
 }
 
 /// `Value` holds every number as an `f64`. A fixture that says

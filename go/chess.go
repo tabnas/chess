@@ -469,8 +469,22 @@ var (
 	// which also stops an absurd literal reaching the number parser.
 	moveNumber = regexp.MustCompile(`^[1-9][0-9]{0,8}(?:[ \t]*\.+)?`)
 
-	// Numeric annotation glyph (8.2.4).
+	// Numeric annotation glyph (8.2.4). Import format is not fussy about
+	// the value; nine digits is only a bound on how absurd a literal may
+	// get before it reaches the number parser.
 	nag = regexp.MustCompile(`^\$[0-9]{1,9}`)
+
+	// The export-format glyph (8.2.4): "from zero to 255", written as one
+	// or two digits or as a three-digit value from 100 to 255.
+	//
+	// Narrowing the PATTERN rather than range-checking the value is what
+	// makes $0255 and $0000000001 the errors they are in export format. A
+	// range check reads those as 255 and 0, accepts a prefix, and hands
+	// the rest of the digits back to the lexer as a move number, which is
+	// a silently wrong parse rather than a refusal. Matches the canonical
+	// ts/src/chess.ts NAG_STRICT, whose trailing (?!\d) becomes the digit
+	// check in makeNagMatcher.
+	nagStrict = regexp.MustCompile(`^\$(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[0-9][0-9]?)`)
 
 	// Game termination marker (8.2.6).
 	result = regexp.MustCompile(`^(?:1-0|0-1|1/2-1/2|\*)`)
@@ -843,14 +857,20 @@ func makeResultMatcher(tin tabnas.Tin) tabnas.LexMatcher {
 }
 
 // 8.2.4: a glyph value is from zero to 255. Import format is not fussy
-// about that; export format is.
+// about that; export format is, and says so in the pattern rather than in
+// a range check, so that an overlong literal is refused outright instead
+// of being cut short. The digit boundary is the (?!\d) the canonical
+// pattern ends on, checked one step later.
 func makeNagMatcher(tin tabnas.Tin, strict bool) tabnas.LexMatcher {
-	return tokenAt("#NAG", tin, nag, func(src string, start int, m []string) (string, bool) {
-		if strict {
-			n, err := strconv.Atoi(m[0][1:])
-			if nil != err || 255 < n {
-				return "", false
-			}
+	if !strict {
+		return tokenAt("#NAG", tin, nag, func(_ string, _ int, m []string) (string, bool) {
+			return m[0], true
+		})
+	}
+	return tokenAt("#NAG", tin, nagStrict, func(src string, start int, m []string) (string, bool) {
+		end := start + len(m[0])
+		if end < len(src) && '0' <= src[end] && src[end] <= '9' {
+			return "", false
 		}
 		return m[0], true
 	})

@@ -63,7 +63,8 @@ pub use model::{
     Annotation, CastleSide, CheckIndicator, Command, Comment, CommentKind, Database,
     Disambiguation, Game, GameResult, Line, Move, Piece, PromotionPiece, Side,
 };
-pub use san::{parse_san, san_pattern};
+pub use san::parse_san;
+use san::san_pattern;
 pub use tabnas::Tabnas;
 
 // --- BEGIN EMBEDDED chess-grammar.jsonic ---

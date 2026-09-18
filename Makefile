@@ -7,6 +7,13 @@
 # before the others after a grammar change, or they compile against a
 # stale copy.
 
+# Serial, always. `build-ts` runs ts/embed-grammar.js, which REWRITES the
+# embedded grammar inside go/chess.go and rs/src/lib.rs, and `build-web`
+# bundles what `build-ts` compiled. Under `make -j` those writes race the
+# reads, so the ordering the aggregate targets spell out has to be the
+# ordering make uses.
+.NOTPARALLEL:
+
 .PHONY: all build test clean reset diagram \
         build-ts build-go build-rs build-web test-ts test-go test-rs test-web \
         clean-ts clean-go clean-rs clean-web publish-ts publish-go tags-go tidy-go \
