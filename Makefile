@@ -1,23 +1,24 @@
-# Build and test both the TypeScript (ts/) and Go (go/) implementations.
-# ts/ is canonical; go/ tracks it.
+# Build and test the TypeScript (ts/), Go (go/) and Rust (rs/)
+# implementations. ts/ is canonical; the other two track it.
 #
 # The grammar is single-sourced in chess-grammar.jsonic and embedded into
-# BOTH ts/src/chess.ts and go/chess.go by ts/embed-grammar.js, which
-# `npm run build` runs first. Build the TS side before the Go side after a
-# grammar change, or Go will compile against a stale copy.
+# ALL THREE of ts/src/chess.ts, go/chess.go and rs/src/lib.rs by
+# ts/embed-grammar.js, which `npm run build` runs first. Build the TS side
+# before the others after a grammar change, or they compile against a
+# stale copy.
 
 .PHONY: all build test clean reset diagram \
-        build-ts build-go build-web test-ts test-go test-web \
-        clean-ts clean-go clean-web publish-ts publish-go tags-go tidy-go \
+        build-ts build-go build-rs build-web test-ts test-go test-rs test-web \
+        clean-ts clean-go clean-rs clean-web publish-ts publish-go tags-go tidy-go \
         prose prose-counts
 
 all: build test
 
-build: build-ts build-go build-web
+build: build-ts build-go build-rs build-web
 
-test: test-ts test-go test-web
+test: test-ts test-go test-rs test-web
 
-clean: clean-ts clean-go clean-web
+clean: clean-ts clean-go clean-rs clean-web
 
 # --- TypeScript (package in ts/) ---
 build-ts:
@@ -57,6 +58,21 @@ clean-go:
 tidy-go:
 	cd go && go mod tidy
 
+# --- Rust (crate in rs/) ---
+# Depends on a sibling checkout of tabnas/parser for the engine crate,
+# which is not published to crates.io. See rs/README.md.
+build-rs:
+	cd rs && cargo build --all-targets
+
+test-rs:
+	cd rs && cargo test --all-targets
+	cd rs && cargo test --doc
+	cd rs && cargo clippy --all-targets --all-features -- -D warnings
+	cd rs && cargo fmt --all --check
+
+clean-rs:
+	cd rs && cargo clean
+
 # Publish the Go module: make publish-go V=x.y.z
 # Injects V into the Go `VERSION` const, commits, and tags go/vX.Y.Z.
 publish-go: test-go
@@ -79,6 +95,7 @@ diagram:
 reset:
 	cd ts && npm run reset
 	cd go && go clean -cache && go build ./... && go test ./...
+	cd rs && cargo clean && cargo build --all-targets && cargo test --all-targets
 
 # The prose gate (see docs/STYLE-GUIDE.md). Vale over the reader-facing
 # pages, at the levels set in .vale.ini, on the same file list

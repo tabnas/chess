@@ -59,13 +59,15 @@ an inferred field would make the parser a chess engine, and a bad one.
 | Path | What it is |
 |---|---|
 | [`chess-grammar.jsonic`](chess-grammar.jsonic) | **Single source of truth** for the rule table, authored in jsonic so it can carry comments. |
-| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **both** `ts/src/chess.ts` and `go/chess.go`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; neither runtime parses jsonic at run time. |
+| [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **all three** of `ts/src/chess.ts`, `go/chess.go` and `rs/src/lib.rs`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; no runtime parses jsonic at run time. |
 | [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/chess` package. Plugin in `src/chess.ts`. Peer-depends on `@tabnas/parser`. |
 | [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
-| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **Both** runtimes auto-discover and run every file here, so adding one covers TypeScript and Go together. See [`test/AGENTS.md`](test/AGENTS.md). |
+| [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`). The engine crate is NOT published to crates.io, so it is a **path dependency on a sibling checkout** of `tabnas/parser`: `tabnas = { path = "../../parser/rs" }`. See [`rs/README.md`](rs/README.md). |
+| [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **All three** runtimes auto-discover and run every file here, so adding one covers TypeScript, Go and Rust together. See [`test/AGENTS.md`](test/AGENTS.md). |
 | [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
 | [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
-| [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by both runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
+| [`rs/tests/`](rs/tests/) | `chess_test.rs`, `parity_test.rs`, `perf_test.rs` and `version_test.rs` — the same jobs again. The crate's and the README's examples run as doctests, which `cargo test --all-targets` does NOT cover. |
+| [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by all three runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
 | [`web/`](web/) | The `<chess-view>` web component — a board view built on the TS package, bundled self-contained by `web/build.js`. **Not** part of the parser: it holds the legal move generator the parser deliberately does not have. See [`web/README.md`](web/README.md). |
 
 ## Repo-specific gotchas
@@ -103,14 +105,16 @@ an inferred field would make the parser a chess engine, and a bad one.
   moves — the worst possible outcome, worse than an error. Section 7 says
   a symbol token ends before the first non-symbol character; the guard is
   that rule. TS spells it as the `SYMBOL_TAIL` lookahead inside the
-  pattern; Go, which has no lookahead, spells it as the `endsToken` check
-  the matcher runs after the match.
+  pattern; Go and Rust, whose regexp engines have no lookahead, spell it
+  as the `endsToken` / `ends_token` check the matcher runs after the
+  match.
 
 - **`#RES` must be tried before `#MVN`.** Match-token matchers run in
   token-id order, which is registration order, and `1-0` starts with a
   digit. TS relies on the `match.token` key order plus a `(?![-/])` guard
-  in `MOVE_NUMBER`; Go on the `j.Token` call order plus `TokenOrder`. Keep
-  every one of them.
+  in `MOVE_NUMBER`; Go on the `j.Token` call order plus `TokenOrder`; Rust
+  on the `tn.token` call order alone, since the engine sorts
+  `options.match_tokens` by tin. Keep every one of them.
 
 - **Rules without a node inherit the enclosing one.** `movetext`, `element`,
   `tag` and `tagbody` have no node of their own, so `r.node` in their
@@ -118,9 +122,10 @@ an inferred field would make the parser a chess engine, and a bad one.
   a game the same shape. `@movetext-bo` allocates one only when `movetext`
   is the start rule and so has no parent.
 
-- **Move numbering lives on the node, non-enumerably.** The running
-  `{number, side}` counter hangs off the line under a `Symbol.for` key, so
-  the parse result is plain JSON with no clean-up pass. `@rav-bo` seeds a
+- **Move numbering lives on the node, invisibly.** The running
+  `{number, side}` counter hangs off the line — under a `Symbol.for` key
+  in TS, in a `json:"-"` field in Go, in `MapRef::meta` in Rust — so the
+  parse result is plain JSON with no clean-up pass. `@rav-bo` seeds a
   fresh counter from the move the variation replaces.
 
 - **A `[` after the movetext starts the NEXT game**, and so does anything
@@ -141,24 +146,27 @@ an inferred field would make the parser a chess engine, and a bad one.
 
 ## Authority and alignment rules
 
-1. **TypeScript is canonical.** When TS and Go disagree on parse
-   behaviour, TS wins; change Go to match.
+1. **TypeScript is canonical.** When TS and a port disagree on parse
+   behaviour, TS wins; change the port to match.
 2. **The grammar source is single-sourced, not duplicated.**
    `chess-grammar.jsonic` is authored once; `embed-grammar.js` compiles it
-   into the `grammarText` literal in **both** `ts/src/chess.ts` and
-   `go/chess.go`. **Never hand-edit the text between the
-   `--- BEGIN/END EMBEDDED chess-grammar.jsonic ---` markers** — edit the
-   `.jsonic` and re-run `npm run embed` (or `npm run build`, which embeds
-   first). Build the TS side before the Go side after a grammar change, or
-   Go compiles against a stale copy. The Go embed rejects a grammar
-   containing backticks (incompatible with Go raw strings).
+   into the embedded literal in **all three** of `ts/src/chess.ts`,
+   `go/chess.go` and `rs/src/lib.rs`. **Never hand-edit the text between
+   the `--- BEGIN/END EMBEDDED chess-grammar.jsonic ---` markers** — edit
+   the `.jsonic` and re-run `npm run embed` (or `npm run build`, which
+   embeds first). Build the TS side before the others after a grammar
+   change, or they compile against a stale copy. Each embed guards its own
+   string syntax: Go rejects a grammar containing a backtick (incompatible
+   with Go raw strings), Rust one containing `"##` (which would close the
+   `r##"…"##` raw string early — token names like `"#SAN"` are why one
+   hash is not enough).
 3. **The grammar carries no functions.** Actions are `@ref` strings the
    plugin binds at load time; `embed-grammar.js` fails the build if an
    `a`/`c`/`h`/`e` field is anything but a string. That is what keeps the
    grammar shippable as data.
-4. **The two ports must produce the same values for the same input.** The
-   parity contract is the shared grammar source plus the shared
-   `test/spec/*.tsv` fixtures, which both runtimes auto-discover.
+4. **The three runtimes must produce the same values for the same
+   input.** The parity contract is the shared grammar source plus the
+   shared `test/spec/*.tsv` fixtures, which all three auto-discover.
 5. **Prefer a `test/spec/*.tsv` fixture** over an in-language assertion
    whenever a case is expressible as `input -> JSON`. The in-language suite
    keeps only what a fixture cannot express.
@@ -166,9 +174,11 @@ an inferred field would make the parser a chess engine, and a bad one.
    name the section, the behaviour is a guess, and a guess does not belong
    in a conformance parser. Where the standard is silent (the `[%…]` comment
    markup), say so explicitly in the docs.
-7. Both `VERSION` constants (`ts/src/chess.ts`, `go/chess.go`) MUST equal
-   `ts/package.json` "version" — `ts/test/version.test.ts` and
-   `go/version_test.go` read that file and fail (never skip) on drift.
+7. All three `VERSION` sites (`ts/src/chess.ts`, `go/chess.go`,
+   `rs/src/lib.rs` — and `rs/Cargo.toml`, which `rs/src/lib.rs` is checked
+   against) MUST equal `ts/package.json` "version". `ts/test/version.test.ts`,
+   `go/version_test.go` and `rs/tests/version_test.rs` read that file and
+   fail (never skip) on drift.
 
 ## Build & test
 
@@ -188,9 +198,23 @@ go build ./...
 go test ./...          # the shared fixtures, plus a Go-side suite
 ```
 
-The repo-root [`Makefile`](Makefile) wraps all three sides: `make
-build|test|clean` run the TS, Go **and `web/`** parts (see the note below
-on `test-web`'s ordering), `make reset` rebuilds from clean, `make diagram`
+Rust (from `rs/`):
+
+```bash
+cargo build --all-targets
+cargo test --all-targets   # the shared fixtures, plus a Rust-side suite
+cargo test --doc           # `--all-targets` does NOT run doctests
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all --check
+```
+
+The Rust crate needs a sibling checkout of `tabnas/parser` beside this
+repo: the engine crate is not on crates.io, so `rs/Cargo.toml` reaches it
+by path (`../../parser/rs`). See [`rs/README.md`](rs/README.md).
+
+The repo-root [`Makefile`](Makefile) wraps all four sides: `make
+build|test|clean` run the TS, Go, Rust **and `web/`** parts (see the note
+below on `test-web`'s ordering), `make reset` rebuilds from clean, `make diagram`
 regenerates the railroad diagram, `make tidy-go` tidies the Go module,
 `make tags-go` lists `go/v*` tags, `make publish-ts` publishes the npm
 package, and `make publish-go V=x.y.z` injects V into the `const VERSION`
@@ -202,7 +226,7 @@ The commands that prove a change is correct. Run them from the repo root
 unless stated:
 
 ```bash
-make build && make test      # TS, Go AND the web component — the check that matters
+make build && make test      # TS, Go, Rust AND the web component — the check that matters
 ```
 
 Narrower, when iterating:
@@ -210,6 +234,7 @@ Narrower, when iterating:
 ```bash
 (cd ts && npm test)                    # `pretest` builds first
 (cd go && go test ./...)               # unit tests + the shared spec fixtures
+(cd rs && cargo test --all-targets)    # the same two, again
 ```
 
 Each line is a subshell. `npm test` compiles first — its `pretest`
@@ -230,18 +255,26 @@ surfaces in `make test`, not just in `web/`.
 
 What "correct" means here, in order of authority:
 
-1. **The shared fixtures pass in BOTH runtimes.** `test/spec/*.tsv` is the
-   parity contract, auto-discovered by both runners — a row green in one
-   runtime and red in the other is a failure, not a discrepancy.
-2. **The three version constants agree** — `ts/package.json` `"version"`,
-   `VERSION` in `ts/src/chess.ts`, and `const VERSION` in `go/chess.go`.
-   `ts/test/version.test.ts` and `go/version_test.go` fail (never skip) on
-   drift.
+1. **The shared fixtures pass in ALL THREE runtimes.** `test/spec/*.tsv`
+   is the parity contract, auto-discovered by all three runners — a row
+   green in one runtime and red in another is a failure, not a
+   discrepancy.
+2. **The version sites agree** — `ts/package.json` `"version"`, `VERSION`
+   in `ts/src/chess.ts`, `const VERSION` in `go/chess.go`, and both
+   `version` in `rs/Cargo.toml` and `pub const VERSION` in
+   `rs/src/lib.rs`. `ts/test/version.test.ts`, `go/version_test.go` and
+   `rs/tests/version_test.rs` fail (never skip) on drift.
 3. **The embedded grammar matches its source.** If you changed
    `chess-grammar.jsonic`, run `npm run embed` from `ts/` (or
    `npm run build`, which embeds first) — never hand-edit between the
-   `BEGIN/END EMBEDDED` markers — and build the TS side before the Go side,
-   or Go compiles against a stale copy.
+   `BEGIN/END EMBEDDED` markers — and build the TS side before the Go and
+   Rust sides, or they compile against a stale copy.
+
+**CI does not yet run the Rust side.** `.github/workflows/ci.yml` calls
+the org's `polyglot-ci.yml`, and changing what it asks for is a
+maintainer promotion (see [`ci/README.md`](ci/README.md) — session
+credentials cannot write `.github/workflows/*`). Until that lands,
+`make test-rs` is the gate, and it is on you to run it.
 
 ## Releasing
 
@@ -277,9 +310,19 @@ released the component.
 
 The steps, in order:
 
-1. Bump all **three** version sites together — `ts/package.json`, `VERSION`
-   in `ts/src/chess.ts` and `const VERSION` in `go/chess.go`. Drift is
-   caught by `ts/test/version.test.ts` and `go/version_test.go`.
+1. Bump all **five** version sites together — `ts/package.json`, `VERSION`
+   in `ts/src/chess.ts`, `const VERSION` in `go/chess.go`, `version` in
+   `rs/Cargo.toml` and `pub const VERSION` in `rs/src/lib.rs`. Drift is
+   caught by `ts/test/version.test.ts`, `go/version_test.go` and
+   `rs/tests/version_test.rs`.
+
+   The Rust crate is **not published** — the engine it depends on is not
+   on crates.io, so there is nothing for `cargo publish` to resolve
+   against. Its version site exists so the three ports report the same
+   version, not because a dispatch ships it; `release.yml` publishes npm
+   and tags the Go module, and neither job touches `rs/`. Regenerate
+   `rs/Cargo.lock` after the bump (`cd rs && cargo update --workspace`)
+   so `cargo build --locked` still resolves.
 2. Verify against the **published** dependencies rather than your checkout.
    The release runner installs fresh from the registry; a working tree
    usually does not, so reproduce that before believing anything:
@@ -446,7 +489,13 @@ re-dispatch.
 
 Testing against unreleased siblings means symlinked `node_modules`,
 `replace` directives and a workspace. None of it may reach a commit, and
-`git add -A` is how it does:
+`git add -A` is how it does.
+
+**`rs/Cargo.toml`'s path dependency is the exception, and it is
+deliberate.** The engine crate is not published anywhere, so a sibling
+checkout is not a local workaround for the Rust side — it is how the
+crate resolves, in a working tree and in CI alike. Leave it. Everything
+below is still forbidden:
 
 - `go mod edit -replace …=/abs/path` — CI reports it as `replacement
   directory /… does not exist`.
@@ -529,6 +578,40 @@ value as hostile text.
   and comment text verbatim (the null-prototype tag map closes one hazard,
   not the category); escaping for SQL, HTML or a shell remains the
   caller's job.
+
+## Rust-specific notes
+
+The model and the accepted notation are identical — that is what the
+shared fixtures pin. Four things differ because the languages do:
+
+- **The node is a `Value`, and nodes are shared cells.** Every rule gets
+  its node as an `Rc<RefCell<Value>>`, and a rule that inherits one gets
+  the SAME cell — which is what `movetext` and `element` writing into the
+  enclosing line relies on. A rule that needs a node of its own (`pgn`,
+  `game`, `rav`, and `movetext` as a start rule) REPLACES the cell —
+  `rule.node = Rc::new(RefCell::new(…))` — rather than writing through
+  it. Write through it and you overwrite the parent's node.
+
+- **The counter lives in `MapRef::meta`.** Neither `Serialize` nor
+  `to_json` emits that map, so it is the Rust spelling of the
+  non-enumerable `Symbol` property and the `json:"-"` field. Keep it
+  there: anything in a node's `value` map reaches the consumer.
+
+- **`Value` numbers are `f64`.** `serde_json` writes an `f64` back as
+  `1.0`, and a fixture saying `{"rank":1}` means the integer, so
+  `tabnas_chess::to_json` puts an integral number back as one. Use it
+  rather than `Value::to_json` on anything a consumer or a fixture will
+  compare.
+
+- **`#TGN` is the only plain regexp matcher.** The other four are
+  callback matchers, because each needs a bounds check the `regex` crate
+  cannot express as a lookahead — the same reason the Go port uses
+  `Match.TokenFn`.
+
+The engine's lexer advances by Unicode scalar and keeps `ri`/`ci` honest
+as it goes, so this port needs no `advance` helper for the hand-written
+matchers: a brace comment spanning lines leaves later error positions
+right on its own.
 
 ## Go-specific notes
 
