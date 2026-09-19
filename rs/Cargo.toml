@@ -1,0 +1,22 @@
+[package]
+name = "tabnas-chess"
+version = "0.1.7"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Richard Rodger <http://richardrodger.com>"]
+description = "A Tabnas grammar plugin that parses chess notation: PGN games and the SAN moves inside them."
+license = "MIT"
+repository = "https://github.com/tabnas/chess"
+readme = "README.md"
+keywords = ["chess", "pgn", "san", "notation", "parser"]
+categories = ["parsing"]
+
+[dependencies]
+# The engine is not published to crates.io, so this is a sibling checkout
+# of github.com/tabnas/parser, one directory up — the same layout the
+# TypeScript and Go sides already assume. See README.md.
+tabnas = { path = "../../parser/rs" }
+indexmap = { version = "2.2", features = ["serde"] }
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }

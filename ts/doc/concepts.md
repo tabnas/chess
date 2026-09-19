@@ -302,28 +302,33 @@ grammar, and a file that omits them still parses correctly.
 
 ---
 
-## 4. Two runtimes, one grammar
+## 4. Three runtimes, one grammar
 
-The TypeScript and Go packages are not two parsers that happen to agree.
-The grammar is authored once, in
+The TypeScript, Go and Rust packages are not three parsers that happen to
+agree. The grammar is authored once, in
 [`chess-grammar.jsonic`](../../chess-grammar.jsonic), and compiled into
-both sources as JSON at build time, so neither runtime can silently grow a
-rule the other lacks. The conformance fixtures in
-[`test/spec/`](../../test/spec/) are shared the same way: both runners list
-that directory and run every `.tsv` in it, comparing after a JSON
+all three sources as JSON at build time, so no runtime can silently grow a
+rule the others lack. The conformance fixtures in
+[`test/spec/`](../../test/spec/) are shared the same way: every runner
+lists that directory and runs every `.tsv` in it, comparing after a JSON
 round-trip so the assertion is about the shape a *consumer* receives, not
-about either language's internals.
+about any one language's internals.
 
 What is necessarily per-runtime is the lexer, because a lexer is code:
 
-- Go's RE2 has no lookahead, so the section 7 symbol-tail rule that stops
-  `e2e4` becoming two moves is a bounds check after the match rather than a
-  `(?!…)` inside the pattern. Same rule, checked one step later.
+- Go's RE2 and Rust's `regex` have no lookahead, so the section 7
+  symbol-tail rule that stops `e2e4` becoming two moves is a bounds check
+  after the match rather than a `(?!…)` inside the pattern. Same rule,
+  checked one step later.
 - A Go slice is a value, so the rule that appends each game writes through
   a `*Database`, where JavaScript pushes onto an array.
-- `Game` embeds `Line` anonymously rather than extending it, which is what
-  makes the two marshal to the same JSON object.
+- `Game` embeds `Line` anonymously in Go and flattens it in Rust rather
+  than extending it, which is what makes all three marshal to the same
+  JSON object.
+- The running move number hangs off the line under a `Symbol` key in
+  JavaScript, a skipped struct field in Go, and a metadata map in Rust.
+  All three are invisible to a consumer, which is the requirement.
 
 None of those is visible in the output, which is the point, and what the
-shared fixtures exist to keep true. TypeScript is canonical: where the two
-disagree, TS is right and Go is the bug.
+shared fixtures exist to keep true. TypeScript is canonical: where the
+runtimes disagree, TS is right and the port is the bug.

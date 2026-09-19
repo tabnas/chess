@@ -84,7 +84,7 @@ shared fixtures pin. Three things differ because the languages do:
    no `(?!…)`, so the PGN section 7 rule that a symbol token ends before
    the first non-symbol character is a bounds check the matcher runs after
    the match, rather than part of the pattern. Same rule, checked one step
-   later, and `e2e4` is rejected in both runtimes.
+   later, and `e2e4` is rejected in every runtime.
 
 `Options` is also a struct here rather than an object literal, which is
 why turning `Commands` *off* needs `CommandsSet`.

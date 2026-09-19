@@ -19,7 +19,7 @@ Docs, guides, the error reference and the playground: **[tabnas.dev](https://tab
 A grammar plugin that teaches the [Tabnas](https://github.com/tabnas/parser)
 parser to read **chess notation**: [PGN](https://www.chessprogramming.org/Portable_Game_Notation)
 games and the [SAN](https://en.wikipedia.org/wiki/Algebraic_notation_(chess))
-moves inside them. Available for both TypeScript and Go, built on the same
+moves inside them. Available for TypeScript, Go and Rust, built on the same
 grammar.
 
 Chess notation looks like this:
@@ -42,6 +42,11 @@ npm install @tabnas/parser @tabnas/chess
 # Go
 go get github.com/tabnas/chess/go@latest
 ```
+
+Rust lives in [`rs/`](rs/) as the `tabnas-chess` crate. It is not on
+crates.io yet, because the engine crate it depends on is not either, so
+it is used from a checkout beside one of `tabnas/parser`.
+[`rs/README.md`](rs/README.md) has the layout.
 
 ## One tiny example
 
@@ -82,6 +87,18 @@ import chess "github.com/tabnas/chess/go"
 
 db, _ := chess.Parse("1. e4 e5 *")
 // db[0].Moves[0] == &chess.Move{San: "e4", Piece: "P", To: "e4", Number: 1, Side: "w"}
+```
+
+**Rust.** `parse` is the same one call, into the same model:
+
+```rust
+let games = tabnas_chess::parse("1. e4 e5 *", &Default::default())?;
+let played = &games[0].line.moves[0];
+
+assert_eq!("e4", played.san);
+assert_eq!(tabnas_chess::Piece::P, played.piece);
+assert_eq!(Some(1), played.number);
+assert_eq!(Some(tabnas_chess::Side::White), played.side);
 ```
 
 ## What you get back
@@ -203,16 +220,18 @@ one file per quadrant:
 | **Concepts** (explanation) | [ts/doc/concepts.md](ts/doc/concepts.md) |
 
 The docs' examples are TypeScript, but the model, the options and the
-accepted notation are the same in both runtimes.
+accepted notation are the same in all three runtimes.
 
-Package hubs: [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md).
+Package hubs: [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md),
+[`rs/README.md`](rs/README.md).
 
 ## Grammar diagram
 
 The grammar is defined once in the top-level
-[`chess-grammar.jsonic`](chess-grammar.jsonic) and embedded into **both**
-implementations, TypeScript ([`ts/src/chess.ts`](ts/src/chess.ts)) and Go
-([`go/chess.go`](go/chess.go)), by
+[`chess-grammar.jsonic`](chess-grammar.jsonic) and embedded into **all
+three** implementations, TypeScript ([`ts/src/chess.ts`](ts/src/chess.ts)),
+Go ([`go/chess.go`](go/chess.go)) and Rust
+([`rs/src/lib.rs`](rs/src/lib.rs)), by
 [`ts/embed-grammar.js`](ts/embed-grammar.js) during the TypeScript build.
 Edit the grammar there, not in the generated sources.
 

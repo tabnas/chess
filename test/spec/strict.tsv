@@ -29,6 +29,13 @@ e4 $999 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"sid
 e4 $999 *	ERROR	{"strict":true}
 e4 $255 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[255]}],"result":"*"}]
 e4 $255 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[255]}],"result":"*"}]	{"strict":true}
+# A leading zero is not a spelling of a value in range: export format
+# writes one or two digits, or three from 100 to 255. Import format reads
+# the digits it finds and stops after nine.
+e4 $0255 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[255]}],"result":"*"}]
+e4 $0255 *	ERROR	{"strict":true}
+e4 $0000000001 *	[{"tags":{},"moves":[{"san":"e4","piece":"P","to":"e4","number":1,"side":"w","nags":[0]}],"result":"*"}]
+e4 $0000000001 *	ERROR	{"strict":true}
 # --- canonical SAN is accepted by both ---
 O-O *	[{"tags":{},"moves":[{"san":"O-O","piece":"K","castle":"king","number":1,"side":"w"}],"result":"*"}]	{"strict":true}
 O-O-O *	[{"tags":{},"moves":[{"san":"O-O-O","piece":"K","castle":"queen","number":1,"side":"w"}],"result":"*"}]	{"strict":true}

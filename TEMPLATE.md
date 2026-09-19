@@ -32,7 +32,7 @@ see [`AGENTS.md`](AGENTS.md), and for the reasoning behind them
 | **node:test + dist layout** | Tests are authored in TS under `ts/test/*.test.ts`, compiled to `dist-test/`, run with `node --test "dist-test/*.test.js"`. `src` → `dist`, `test` → `dist-test`. No bundler, no jest. |
 | **doc-examples harness** | `ts/test/doc-examples.test.ts` is identical across tabnas repos. It scans markdown, runs ` ```js ` blocks that contain a `// =>` assertion, and checks each `<expr> // => <expected>`. Keep it; your README examples become tests for free. |
 | **Diataxis doc set** | `ts/doc/{tutorial,guide,reference,concepts}.md` (+ `go/doc/`). One file per quadrant, per runtime. Rewrite the prose; keep the four-file shape. |
-| **Makefile / CI shape** | Root `Makefile` wraps both runtimes (`build`/`test`/`clean`/`reset`, `publish-ts`, `publish-go V=x.y.z`, `tags-go`). `.github/workflows/build.yml` has a `build` (Node, multi-OS) and `build-go` job. Reuse the structure; swap the package name. |
+| **Makefile / CI shape** | Root `Makefile` wraps every runtime this repo carries (`build`/`test`/`clean`/`reset`, `publish-ts`, `publish-go V=x.y.z`, `tags-go`), one `<name>-ts`/`-go`/`-rs` target per side. `.github/workflows/build.yml` has a `build` (Node, multi-OS) and `build-go` job. Reuse the structure; swap the package name. |
 | **package.json conventions** | Engine deps (`@tabnas/parser`, and `@tabnas/jsonic`/`@tabnas/abnf` if you base on one) are **`peerDependencies`** (`^0.2.0`), each mirrored as a `file:../../<dep>/ts` **devDependency** for monorepo dev. `@tabnas/debug` / `@tabnas/railroad` are dev-only `file:` deps. `engines.node` is `>=24`. |
 
 ### ZON-specific — rewrite for your format

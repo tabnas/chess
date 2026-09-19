@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Embed chess-grammar.jsonic into the TypeScript AND Go sources.
+// Embed chess-grammar.jsonic into the TypeScript, Go AND Rust sources.
 // Run via: npm run embed  (or:  node embed-grammar.js)
 //
 // The grammar is AUTHORED in jsonic (so it can carry comments) and
@@ -23,6 +23,7 @@ const { jsonic } = require('@tabnas/jsonic')
 const GRAMMAR_FILE = path.join(__dirname, '..', 'chess-grammar.jsonic')
 const TS_FILE = path.join(__dirname, 'src', 'chess.ts')
 const GO_FILE = path.join(__dirname, '..', 'go', 'chess.go')
+const RS_FILE = path.join(__dirname, '..', 'rs', 'src', 'lib.rs')
 
 const BEGIN = '// --- BEGIN EMBEDDED chess-grammar.jsonic ---'
 const END = '// --- END EMBEDDED chess-grammar.jsonic ---'
@@ -98,9 +99,40 @@ function embedGo() {
   console.log('Embedded grammar into', GO_FILE)
 }
 
+function embedRust() {
+  let src = fs.readFileSync(RS_FILE, 'utf8')
+  const startIdx = src.indexOf(BEGIN)
+  const endIdx = src.indexOf(END)
+  if (-1 === startIdx || -1 === endIdx) {
+    console.error('Rust markers not found in', RS_FILE)
+    process.exit(1)
+  }
+
+  // A Rust raw string has no escapes, so the JSON goes in verbatim. The
+  // hash count has to clear the longest `"#...` run the JSON contains,
+  // and the JSON is full of `"#SAN"`-style token names, so two hashes is
+  // the floor rather than the usual one.
+  if (json.includes('"##')) {
+    console.error('Grammar contains `"##`, incompatible with the r## raw string')
+    process.exit(1)
+  }
+
+  const replacement =
+    BEGIN + '\nconst GRAMMAR_TEXT: &str = r##"\n' + json + '"##;\n' + END
+
+  src = src.substring(0, startIdx) + replacement + src.substring(endIdx + END.length)
+  fs.writeFileSync(RS_FILE, src)
+  console.log('Embedded grammar into', RS_FILE)
+}
+
 embedTS()
-if (fs.existsSync(GO_FILE)) {
-  embedGo()
-} else {
-  console.log('No Go source at', GO_FILE, '- skipping')
+for (const [label, file, embed] of [
+  ['Go', GO_FILE, embedGo],
+  ['Rust', RS_FILE, embedRust],
+]) {
+  if (fs.existsSync(file)) {
+    embed()
+  } else {
+    console.log('No', label, 'source at', file, '- skipping')
+  }
 }
