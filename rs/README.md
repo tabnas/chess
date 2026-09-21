@@ -1,7 +1,7 @@
 # tabnas-chess
 
 Rust port of `@tabnas/chess`: a [Tabnas](https://github.com/tabnas/parser)
-grammar plugin that parses chess notation — PGN (Portable Game Notation)
+grammar plugin that parses chess notation: PGN (Portable Game Notation)
 games and the SAN (Standard Algebraic Notation) moves inside them.
 
 TypeScript is canonical and this port tracks it. The grammar is not
@@ -28,7 +28,7 @@ assert_eq!(Some(Side::Black), game.line.moves[1].side);
 
 `parse` builds an engine and reads the result into the typed model.
 `make` hands you the engine instead, for another start rule or for reuse
-across many parses — building the grammar dominates a parse, so reuse it.
+across many parses. Building the grammar dominates a parse, so reuse it.
 
 ```rust
 use tabnas_chess::{make, model_of, ChessOptions, Move, Start};
@@ -45,7 +45,7 @@ assert_eq!(Some(6), played.disambiguation.unwrap().rank);
 configuring yourself, and `plugin()` is the same thing as a
 `Tabnas::use_plugin` descriptor for a caller who already holds an option
 bag. Neither touches `color`: that is the caller's to choose, and only
-`make` — which builds the engine — applies the usual terminal and
+`make`, which builds the engine, applies the usual terminal and
 `NO_COLOR` gate.
 
 ## Depending on it
@@ -60,21 +60,21 @@ by path, as a sibling checkout:
 ```
 
 That is the same layout the TypeScript and Go sides already assume for
-local development, and what CI provides by cloning the dependency repos
-beside this one. Clone `tabnas/parser` next to `tabnas/chess` and
+local development, and what CI provides by cloning the dependency
+repositories beside this one. Clone `tabnas/parser` next to `tabnas/chess` and
 `cargo build` works; move it and the path in `Cargo.toml` is the one line
 to change.
 
 ## What differs from the other two ports
 
-The behaviour is identical — that is what the shared fixtures pin — but
+The behaviour is identical, which is what the shared fixtures pin, but
 three things are spelled differently because the language is:
 
 - **The parse result is a `tabnas::Value`, not a native tree.** The
   engine's node is a `Value`, so the actions build one, and `parse`
-  deserialises it into `Game` through serde. The typed model is therefore
+  reads it into `Game` through serde. The typed model is therefore
   the JSON shape rather than a second description of it, and `model_of`
-  is the one step between a raw `Value` and the model — which is what a
+  is the one step between a raw `Value` and the model, which is what a
   caller using another start rule needs.
 - **Boundary guards are code, not lookahead.** Rust's `regex` crate has
   no `(?!…)`, so the PGN section 7 symbol-tail rule is a check the
@@ -83,12 +83,12 @@ three things are spelled differently because the language is:
   worse than an error.
 - **Line bookkeeping lives in `MapRef::meta`.** The running move number
   and side to move are carried on the line node in a map that neither
-  `Serialize` nor `to_json` emits — this port's answer to the
+  `Serialize` nor `to_json` emits, which is this port's answer to the
   non-enumerable `Symbol` property in TypeScript and the `json:"-"` field
   in Go. The parse result stays plain JSON with no clean-up pass.
 
 One thing this port gets for free: the engine's lexer advances by Unicode
-scalar and keeps `ri`/`ci` honest as it goes, so a brace comment spanning
+scalar and keeps `ri` and `ci` right as it goes, so a brace comment spanning
 lines leaves later error positions right without the `advance` helper the
 other two ports each hand-write.
 
