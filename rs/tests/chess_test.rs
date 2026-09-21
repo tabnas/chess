@@ -550,6 +550,60 @@ fn options_read_from_a_plugin_option_bag() {
     assert_eq!("e4", played.san);
 }
 
+/// The bag is read field by field, as `ts/src/chess.ts` reads it
+/// (`true === options?.strict`, `false !== options?.commands`): a value
+/// of the wrong type leaves THAT option at its default and the others as
+/// given. Read as one struct, one bad field silently discarded them all,
+/// and `{"strict": true, "commands": "no"}` installed lenient.
+#[test]
+fn a_bad_option_does_not_discard_the_good_ones() {
+    // `strict` stays on although `commands` is not a boolean.
+    let mut tn = Tabnas::new();
+    tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(
+            &serde_json::json!({"strict": true, "commands": "no"}),
+        )),
+    )
+    .expect("the plugin installs");
+    assert!(tn.parse("e4! *").is_err(), "strict was discarded");
+    let games: Vec<Game> =
+        model_of(&tn.parse("e4 {[%clk 0:01]} *").expect("it parses")).expect("a database");
+    assert_eq!(
+        1,
+        games[0].line.moves[0].comments[0].commands.len(),
+        "commands fell back to on, as in TypeScript"
+    );
+
+    // `start` stays `move` although `strict` is not a boolean.
+    let mut tn = Tabnas::new();
+    tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(
+            &serde_json::json!({"start": "move", "strict": 1}),
+        )),
+    )
+    .expect("the plugin installs");
+    assert!(tn.parse("e4 e5 *").is_err(), "start was discarded");
+    let played: Move = model_of(&tn.parse("e4!").expect("lenient, so e4! parses")).expect("a move");
+    assert_eq!("e4", played.san);
+}
+
+/// TypeScript hands an unknown `start` to the engine and gets `undefined`
+/// back from every parse. There is no honest Rust spelling of that, so
+/// the install refuses it and says which names it knows.
+#[test]
+fn an_unknown_start_rule_is_refused_at_install() {
+    let mut tn = Tabnas::new();
+    let Err(error) = tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(&serde_json::json!({"start": "bogus"}))),
+    ) else {
+        panic!("an unknown start rule installed");
+    };
+    assert!(error.to_string().contains("bogus"), "{error}");
+}
+
 /// The cached parser behind an optionless [`parse`] is written once and
 /// read by every caller after it. Eight threads racing the first call is
 /// what would find a `OnceLock` used wrongly.
@@ -562,4 +616,37 @@ fn parse_is_race_free_on_first_use() {
         let games = worker.join().expect("no panic").expect("it parses");
         assert_eq!(1, games.len());
     }
+}
+
+/// The canonical plugin splits a `FEN` tag on JavaScript's `\s` and trims
+/// a command operand with JavaScript's `trim()`, and that class is not
+/// Rust's `char::is_whitespace`: U+FEFF is whitespace only to JavaScript,
+/// U+0085 only to Rust. A port that split on the Rust class read
+/// `b<U+0085>-` as one field and `b<U+FEFF>-` as three, the reverse of
+/// TypeScript, so the side and number came out wrong on exactly those
+/// two characters.
+#[test]
+fn whitespace_inside_a_fen_tag_is_javascripts_class() {
+    // U+FEFF separates fields in TypeScript, so this is Black to move at 7.
+    let game = must_game("[FEN \"8/8/8/8/8/8/8/8 b\u{FEFF}- - 0 7\"]\ne4 e5 *");
+    assert_eq!(Some(7), game.line.moves[0].number);
+    assert_eq!(Some(Side::Black), game.line.moves[0].side);
+
+    // U+0085 does not, so `b<NEL>-` is one field that is not `b`, and the
+    // fullmove field is not where the number is looked for.
+    let game = must_game("[FEN \"8/8/8/8/8/8/8/8 b\u{85}- - 0 7\"]\ne4 e5 *");
+    assert_eq!(Some(1), game.line.moves[0].number);
+    assert_eq!(Some(Side::White), game.line.moves[0].side);
+}
+
+/// The same class trims a bare command operand and the stripped text.
+#[test]
+fn command_operands_are_trimmed_with_javascripts_class() {
+    let game = must_game("1. e4 {[%a b\u{FEFF}] [%c \u{85}d ]} *");
+    let commands = &game.line.moves[0].comments[0].commands;
+    assert_eq!(vec!["b".to_string()], commands[0].args);
+    assert_eq!(vec!["\u{85}d".to_string()], commands[1].args);
+
+    assert_eq!("x", strip_commands("x\u{FEFF}"));
+    assert_eq!("\u{85}x\u{85}", strip_commands("\u{85}x\u{85}"));
 }

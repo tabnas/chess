@@ -12,6 +12,7 @@
 [Bb]undler
 [Ff]acto
 [Ff]ullmove
+[Ii]nlined
 [Jj]sonic
 [Ll]exed
 [Ll]exer
@@ -26,6 +27,8 @@
 [Pp]arser
 [Pp]GN
 [Rr]untimes
+serde
 [Ss]cannerless
 [Tt]abnas
+[Tt]oolchain
 [Tt]okenised

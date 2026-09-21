@@ -182,7 +182,7 @@ fn comment_matcher(
         let Some(close) = rest[1..].find('}') else {
             // The span runs to the end of the source, so the diagnostic
             // shows the comment that never closed rather than one brace.
-            let start = lexer.point().pos;
+            let start = lexer.point().site.pos;
             let end = lexer.source().chars().count();
             return Some(lexer.bad_span("unterminated_comment", start, end));
         };
@@ -224,7 +224,7 @@ fn escape_matcher(
        + 'static {
     |lexer: &mut Lexer<'_>, _rule: &mut Rule, _context: &mut Context| {
         let point = lexer.point();
-        if 1 != point.ci {
+        if 1 != point.site.ci {
             return None;
         }
         let rest = lexer.remaining();

@@ -31,7 +31,7 @@ use regex::Regex;
 use serde::Serialize;
 use tabnas::{MapRef, Tabnas, Value};
 
-use crate::commands::scan_commands;
+use crate::commands::{js_space, scan_commands};
 use crate::model::{Comment, CommentKind, GameResult, Move, Side};
 use crate::san::build_move;
 
@@ -186,7 +186,12 @@ fn start_of(node: &Value) -> Count {
     let Some(Value::String(fen)) = tags.get("FEN") else {
         return count;
     };
-    let field: Vec<&str> = fen.split_whitespace().collect();
+    // Split on JavaScript's whitespace class, as the canonical plugin
+    // does (`fen.trim().split(/\s+/)`), not on Rust's.
+    let field: Vec<&str> = fen
+        .split(js_space)
+        .filter(|field| !field.is_empty())
+        .collect();
     if Some(&"b") == field.get(1) {
         count.side = Side::Black;
     }

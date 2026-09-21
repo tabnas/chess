@@ -19,6 +19,15 @@ fn command_open() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\[%([A-Za-z_][A-Za-z0-9_]*)").expect("literal"))
 }
 
+/// JavaScript's whitespace class, which is what the canonical plugin
+/// splits and trims with (`/\s+/`, `String.prototype.trim`). It is not
+/// Rust's `char::is_whitespace`: U+FEFF is whitespace only to JavaScript,
+/// and U+0085 only to Rust. Every other character the two classes agree
+/// on.
+pub(crate) fn js_space(character: char) -> bool {
+    '\u{FEFF}' == character || (character.is_whitespace() && '\u{85}' != character)
+}
+
 fn space(text: &[u8], mut at: usize) -> usize {
     while at < text.len() && (b' ' == text[at] || b'\t' == text[at]) {
         at += 1;
@@ -84,7 +93,7 @@ pub(crate) fn scan_commands(text: &str) -> (Vec<Command>, Vec<(usize, usize)>) {
                         end += 1;
                     }
                     // `a,,b` and a trailing comma contribute nothing.
-                    let bare = text[at..end].trim();
+                    let bare = text[at..end].trim_matches(js_space);
                     if !bare.is_empty() {
                         args.push(bare.to_string());
                     }
@@ -137,5 +146,8 @@ pub fn strip_commands(text: &str) -> String {
         at = end;
     }
     out.push_str(&text[at..]);
-    collapse_spaces().replace_all(&out, " ").trim().to_string()
+    collapse_spaces()
+        .replace_all(&out, " ")
+        .trim_matches(js_space)
+        .to_string()
 }
