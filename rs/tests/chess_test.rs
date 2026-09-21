@@ -617,3 +617,36 @@ fn parse_is_race_free_on_first_use() {
         assert_eq!(1, games.len());
     }
 }
+
+/// The canonical plugin splits a `FEN` tag on JavaScript's `\s` and trims
+/// a command operand with JavaScript's `trim()`, and that class is not
+/// Rust's `char::is_whitespace`: U+FEFF is whitespace only to JavaScript,
+/// U+0085 only to Rust. A port that split on the Rust class read
+/// `b<U+0085>-` as one field and `b<U+FEFF>-` as three, the reverse of
+/// TypeScript, so the side and number came out wrong on exactly those
+/// two characters.
+#[test]
+fn whitespace_inside_a_fen_tag_is_javascripts_class() {
+    // U+FEFF separates fields in TypeScript, so this is Black to move at 7.
+    let game = must_game("[FEN \"8/8/8/8/8/8/8/8 b\u{FEFF}- - 0 7\"]\ne4 e5 *");
+    assert_eq!(Some(7), game.line.moves[0].number);
+    assert_eq!(Some(Side::Black), game.line.moves[0].side);
+
+    // U+0085 does not, so `b<NEL>-` is one field that is not `b`, and the
+    // fullmove field is not where the number is looked for.
+    let game = must_game("[FEN \"8/8/8/8/8/8/8/8 b\u{85}- - 0 7\"]\ne4 e5 *");
+    assert_eq!(Some(1), game.line.moves[0].number);
+    assert_eq!(Some(Side::White), game.line.moves[0].side);
+}
+
+/// The same class trims a bare command operand and the stripped text.
+#[test]
+fn command_operands_are_trimmed_with_javascripts_class() {
+    let game = must_game("1. e4 {[%a b\u{FEFF}] [%c \u{85}d ]} *");
+    let commands = &game.line.moves[0].comments[0].commands;
+    assert_eq!(vec!["b".to_string()], commands[0].args);
+    assert_eq!(vec!["\u{85}d".to_string()], commands[1].args);
+
+    assert_eq!("x", strip_commands("x\u{FEFF}"));
+    assert_eq!("\u{85}x\u{85}", strip_commands("\u{85}x\u{85}"));
+}
