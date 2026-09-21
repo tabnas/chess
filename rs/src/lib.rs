@@ -580,15 +580,59 @@ into the next line.",
 /// The plugin descriptor, for [`Tabnas::use_plugin`]. Options are read
 /// from the plugin option bag, so a caller who has one already can hand
 /// it over; [`chess`] is the typed way in.
+///
+/// The bag is read field by field, as the canonical plugin reads it:
+/// `strict` is on only when it is exactly `true`, `commands` is off only
+/// when it is exactly `false`, and a field of any other type leaves that
+/// ONE option at its default. A `start` that names no rule is refused
+/// here, at install, rather than at the first parse.
 pub fn plugin() -> Plugin {
     Plugin::new("Chess", |tn, options| {
-        chess(tn, &options_from_value(options))
+        chess(tn, &options_from_value(options)?)
     })
     .with_defaults(to_option_value(&ChessOptions::default()))
 }
 
-fn options_from_value(value: &Value) -> ChessOptions {
-    serde_json::from_value(value.to_json()).unwrap_or_default()
+/// Read the option bag the way `ts/src/chess.ts` does — each field on
+/// its own terms, `true === options?.strict`, `false !== options?.commands`,
+/// `options?.start || 'pgn'` — rather than as one struct. Read as a
+/// struct, `{"strict": true, "commands": "no"}` failed as a whole and
+/// silently installed the lenient defaults: one bad field cost the good
+/// ones.
+fn options_from_value(value: &Value) -> Result<ChessOptions, PluginError> {
+    let bag = value.to_json();
+    let field = |name: &str| bag.get(name);
+
+    let strict = Some(&serde_json::Value::Bool(true)) == field("strict");
+    let commands = Some(&serde_json::Value::Bool(false)) != field("commands");
+
+    let start = match field("start") {
+        // Everything JavaScript calls falsy means "the default".
+        None | Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(false)) => Start::Pgn,
+        Some(serde_json::Value::Number(number)) if Some(0.0) == number.as_f64() => Start::Pgn,
+        Some(serde_json::Value::String(name)) => match name.as_str() {
+            "" | "pgn" => Start::Pgn,
+            "game" => Start::Game,
+            "movetext" => Start::Movetext,
+            "move" => Start::Move,
+            _ => {
+                return Err(PluginError(format!(
+                    "chess: start names no rule: {name:?} (one of pgn, game, movetext, move)"
+                )))
+            }
+        },
+        Some(other) => {
+            return Err(PluginError(format!(
+                "chess: start must be a rule name, not {other}"
+            )))
+        }
+    };
+
+    Ok(ChessOptions {
+        strict,
+        commands,
+        start,
+    })
 }
 
 /// Whether to colour an error message.

@@ -550,6 +550,60 @@ fn options_read_from_a_plugin_option_bag() {
     assert_eq!("e4", played.san);
 }
 
+/// The bag is read field by field, as `ts/src/chess.ts` reads it
+/// (`true === options?.strict`, `false !== options?.commands`): a value
+/// of the wrong type leaves THAT option at its default and the others as
+/// given. Read as one struct, one bad field silently discarded them all,
+/// and `{"strict": true, "commands": "no"}` installed lenient.
+#[test]
+fn a_bad_option_does_not_discard_the_good_ones() {
+    // `strict` stays on although `commands` is not a boolean.
+    let mut tn = Tabnas::new();
+    tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(
+            &serde_json::json!({"strict": true, "commands": "no"}),
+        )),
+    )
+    .expect("the plugin installs");
+    assert!(tn.parse("e4! *").is_err(), "strict was discarded");
+    let games: Vec<Game> =
+        model_of(&tn.parse("e4 {[%clk 0:01]} *").expect("it parses")).expect("a database");
+    assert_eq!(
+        1,
+        games[0].line.moves[0].comments[0].commands.len(),
+        "commands fell back to on, as in TypeScript"
+    );
+
+    // `start` stays `move` although `strict` is not a boolean.
+    let mut tn = Tabnas::new();
+    tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(
+            &serde_json::json!({"start": "move", "strict": 1}),
+        )),
+    )
+    .expect("the plugin installs");
+    assert!(tn.parse("e4 e5 *").is_err(), "start was discarded");
+    let played: Move = model_of(&tn.parse("e4!").expect("lenient, so e4! parses")).expect("a move");
+    assert_eq!("e4", played.san);
+}
+
+/// TypeScript hands an unknown `start` to the engine and gets `undefined`
+/// back from every parse. There is no honest Rust spelling of that, so
+/// the install refuses it and says which names it knows.
+#[test]
+fn an_unknown_start_rule_is_refused_at_install() {
+    let mut tn = Tabnas::new();
+    let Err(error) = tn.use_plugin(
+        tabnas_chess::plugin(),
+        Some(Value::from_json(&serde_json::json!({"start": "bogus"}))),
+    ) else {
+        panic!("an unknown start rule installed");
+    };
+    assert!(error.to_string().contains("bogus"), "{error}");
+}
+
 /// The cached parser behind an optionless [`parse`] is written once and
 /// read by every caller after it. Eight threads racing the first call is
 /// what would find a `OnceLock` used wrongly.
