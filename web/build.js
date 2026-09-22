@@ -126,8 +126,18 @@ function declarations() {
   ]
 
   for (const e of entries) {
+    // inlinedLibraries, because the fleet packages are ordinary registry
+    // dependencies. dts-bundle-generator treats anything under node_modules
+    // as an external library and leaves an `import` behind -- which the
+    // self-containment check below then rejects. It only ever inlined these
+    // by accident of a `file:` link resolving into a sibling working tree,
+    // so naming them here is what the bundle actually depends on.
     const [bundle] = generateDtsBundle(
-      [{ filePath: e.filePath, output: { noBanner: true, inlineDeclareGlobals: e.globals } }],
+      [{
+        filePath: e.filePath,
+        libraries: { inlinedLibraries: ['@tabnas/chess', '@tabnas/parser'] },
+        output: { noBanner: true, inlineDeclareGlobals: e.globals },
+      }],
       { preferredConfigPath: path.join(ROOT, 'tsconfig.json') },
     )
     fs.writeFileSync(path.join(OUT, e.outfile), `${BANNER}\n\n${bundle}`)
