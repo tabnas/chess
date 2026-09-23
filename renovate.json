@@ -1,4 +1,18 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>tabnas/.github:renovate-config"]
+  "extends": [
+    "local>tabnas/.github:renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "web/ holds typescript at 6 by the maintainer's instruction (2026-09-23): dts-bundle-generator needs the TypeScript JS compiler API, which TypeScript 7 does not ship. See AGENTS.md.",
+      "matchFileNames": [
+        "web/package.json"
+      ],
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<7"
+    }
+  ]
 }
