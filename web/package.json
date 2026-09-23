@@ -68,10 +68,10 @@
   "devDependencies": {
     "@tabnas/chess": "^0.1.7",
     "@tabnas/parser": "*",
-    "@types/node": "25.6.0",
+    "@types/node": "26.6.2",
     "dts-bundle-generator": "9.5.1",
     "esbuild": "0.28.2",
-    "playwright-core": "^1.62.1",
+    "playwright-core": "^1.63.0",
     "typescript": "6.0.3"
   },
   "engines": {
