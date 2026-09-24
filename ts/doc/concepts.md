@@ -79,7 +79,7 @@ are deliberate:
 
 1. **The PGN standard's own words.** `fig`, `strike`, `disc`, `col`, `row`
    are a private vocabulary; section 8.2.3 already names these things piece,
-   capture, disambiguation, file and rank. Using the standard's terms means
+   capture, disambiguation, file, and rank. Using the standard's terms means
    the field names and the specification are searchable against each other.
 
 2. **A square is one value.** `col: 'd'` + `row: '5'` splits an atom that
