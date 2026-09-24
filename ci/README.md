@@ -11,10 +11,10 @@ Sessions still cannot push tags. Library releases therefore go through
 `workflow_dispatch`, and the web component, which `release.yml` publishes
 only on a `web/v*` tag push, needs a maintainer to push that tag.
 
-Four of this repository's workflows also have a template in admin
-`rollout/workflows/`: `ci.yml`, `crates-release.yml`, `pages.yml` and
-`release.yml`. ADR-8 as amended says a workflow changed here is
-mirrored in its template, so change the template too, in admin.
+Five of this repository's workflows also have a template in admin
+`rollout/workflows/`: `ci.yml`, `crates-release.yml`, `deps-gate.yml`,
+`pages.yml` and `release.yml`. ADR-8 as amended says a workflow changed
+here is mirrored in its template, so change the template too, in admin.
 Otherwise admin `scripts/verify.sh` reports the drift, and the next
 `rollout/apply-workflows.sh --apply` pushes the old text back.
 `clib.yml` and `clib-release.yml` are stamped (each carries a
