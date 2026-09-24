@@ -106,7 +106,7 @@ cargo fmt --all --check
 ```
 
 From the repository root, `make build-rs` and `make test-rs` run the same
-thing, and `make test` runs the TypeScript, Go, web and Rust sides
+thing, and `make test` runs the TypeScript, Go, web, and Rust sides
 together.
 
 The crate declares Rust 1.85 as its minimum supported toolchain, matching

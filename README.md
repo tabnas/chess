@@ -219,7 +219,7 @@ one file per quadrant:
 | **Reference** (API + options + syntax) | [ts/doc/reference.md](ts/doc/reference.md) |
 | **Concepts** (explanation) | [ts/doc/concepts.md](ts/doc/concepts.md) |
 
-The docs' examples are TypeScript, but the model, the options and the
+The docs' examples are TypeScript, but the model, the options, and the
 accepted notation are the same in all three runtimes.
 
 Package hubs: [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md),
