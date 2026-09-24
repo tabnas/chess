@@ -25,35 +25,37 @@ are bundled in, the styles are inline, and the board is inline SVG.
 One tag, nothing to build:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.5"></script>
 
 <chess-view>1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1/2-1/2</chess-view>
 ```
 
-[unpkg](https://unpkg.com) serves the same file from
-`https://unpkg.com/@tabnas/chess-view@0.1.3`. Both resolve the bare
-package URL to `dist/chess-view.js`, the minified IIFE build.
+[unpkg](https://unpkg.com) serves it from
+`https://unpkg.com/@tabnas/chess-view@0.1.5` too. The bare package URL
+stands for `dist/chess-view.js`, the minified IIFE build: unpkg redirects
+to that file, and jsDelivr serves its own re-minified copy of it.
 
 As a module, in a page or from an import map:
 
 ```html
 <script type="module"
-  src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3/dist/chess-view.mjs"></script>
+  src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.5/dist/chess-view.mjs"></script>
 ```
 
-**Pin the version.** The examples above pin `@0.1.3`; the same URLs
+**Pin the version.** The examples above pin `@0.1.5`; the same URLs
 without it follow the latest release, which is convenient right up until
 it is not. And once pinned, a version is immutable on both CDNs, so it can
-be checked:
+be checked. Name the file when you do: the hash is of the file the release
+published, and the copy jsDelivr serves at the bare URL will not match it.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3"
+<script src="https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.5/dist/chess-view.js"
         integrity="sha384-…" crossorigin="anonymous"></script>
 ```
 
 Each release ships the hashes of the files it published, so the value for
 the version you pinned is at
-`https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.3/dist/sri.json`.
+`https://cdn.jsdelivr.net/npm/@tabnas/chess-view@0.1.5/dist/sri.json`.
 
 ### From npm
 
