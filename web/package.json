@@ -1,6 +1,6 @@
 {
   "name": "@tabnas/chess-view",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A self-contained <chess-view> web component: a 2D chessboard view of a PGN game, with move navigation and highlighted notation.",
   "type": "commonjs",
   "exports": {
@@ -66,7 +66,7 @@
     "reset": "npm run clean && npm i && npm run build && npm test"
   },
   "devDependencies": {
-    "@tabnas/chess": "^0.1.7",
+    "@tabnas/chess": "^0.1.8",
     "@tabnas/parser": "*",
     "@types/node": "26.6.2",
     "dts-bundle-generator": "9.5.1",
