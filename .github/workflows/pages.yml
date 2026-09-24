@@ -1,10 +1,15 @@
 # Target: tabnas/chess -> .github/workflows/pages.yml
 #
-# Staged so the action pins here can be promoted by rollout/apply-workflows.sh
-# (ADR-8: automation sessions cannot push .github/workflows/*). This was the
-# only live workflow in the fleet carrying unpinned action tags with no
-# template to fix it through — skills/ci.yml and support/ci.yml, the other
-# two, already had one.
+# Its action pins were first applied with admin rollout/apply-workflows.sh
+# on 2026-08-20, under ADR-8 as it stood before its 2026-09-24
+# amendment. This was the only live workflow in the fleet carrying
+# unpinned action tags with no template to fix it through —
+# skills/ci.yml and support/ci.yml, the other two, already had one.
+# Change it here now, in a reviewed pull request: session credentials
+# can push .github/workflows/* (admin DECISIONS.md ADR-8, as amended
+# 2026-09-24). Mirror the change in admin
+# rollout/workflows/chess__pages.yml, which scripts/verify.sh compares
+# with this copy.
 #
 name: pages
 
