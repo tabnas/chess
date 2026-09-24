@@ -334,10 +334,15 @@ What "correct" means here, in order of authority:
    Rust sides, or they compile against a stale copy.
 
 **CI does not yet run the Rust side.** `.github/workflows/ci.yml` calls
-the org's `polyglot-ci.yml`, and changing what it asks for is a
-maintainer promotion (see [`ci/README.md`](ci/README.md) — session
-credentials cannot write `.github/workflows/*`). Until that lands,
-`make test-rs` is the gate, and it is on you to run it.
+the org's `polyglot-ci.yml`, which has no Rust step, and no workflow here
+runs the Rust suite. Adding one is a workflow change: edit
+`.github/workflows/` in a reviewed pull request. An existing workflow
+with a template in admin `rollout/workflows/` changes in that template
+too (ADR-8 as amended), and the stamped `clib.yml` and
+`clib-release.yml` change only through admin `tasks/clib-template/` and
+a re-stamp; [`ci/README.md`](ci/README.md) names which is which. Until a
+Rust workflow lands, `make test-rs` is the gate, and it is on you to run
+it.
 
 ## Releasing
 
