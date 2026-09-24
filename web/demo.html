@@ -280,8 +280,10 @@ import '@tabnas/chess-view'</pre>
 <p>
   Every release ships the integrity hashes of the files it published, in
   <code>dist/sri.json</code>, so you can put an <code>integrity</code>
-  attribute on that pinned <code>&lt;script&gt;</code> and know you got what you
-  asked for.
+  attribute on a pinned <code>&lt;script&gt;</code> and know you got what you
+  asked for. Name the file when you do
+  (<code>…/chess-view@0.1.5/dist/chess-view.js</code>): at the bare URL
+  jsDelivr serves a copy it minified itself, and that one won't match.
 </p>
 <p>
   Server-side rendering? That's fine. Importing the package on a server does
