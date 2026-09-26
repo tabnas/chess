@@ -318,7 +318,7 @@ const GRAMMAR_TEXT: &str = r##"
 
 /// This crate's version. It MUST equal `ts/package.json` "version":
 /// `tests/version_test.rs` fails the build if they drift.
-pub const VERSION: &str = "0.1.8";
+pub const VERSION: &str = "0.1.9";
 
 /// Which rule to parse from, and so what a parse returns.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
