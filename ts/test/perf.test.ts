@@ -10,8 +10,10 @@
 //
 // The check is machine-INDEPENDENT: it compares reuse against a single
 // parse and against the rebuild-per-parse anti-pattern on the SAME machine
-// in the SAME run, so a slow CI box cannot make it flaky (everything scales
-// together). There is deliberately NO absolute wall-clock budget.
+// in the SAME run, so a slow CI box scales everything together. A runner
+// that stalls part of the run is the remaining noise, so each timing keeps
+// the fastest of several rounds. There is deliberately NO absolute
+// wall-clock budget.
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert'
@@ -45,20 +47,27 @@ describe('perf', () => {
     tn.parse(SRC)
     const single = Number(process.hrtime.bigint() - t0)
 
-    // Time N parses reusing the ONE instance.
-    t0 = process.hrtime.bigint()
-    for (let i = 0; i < N; i++) {
-      tn.parse(SRC)
-    }
-    const reuse = Number(process.hrtime.bigint() - t0)
+    // Time N parses reusing the ONE instance, and N parses that REBUILD a
+    // fresh instance every call (the anti-pattern this guards against).
+    // Each is timed over ROUNDS rounds and the fastest round kept: a
+    // shared CI runner can stall any single round, and the minimum is the
+    // measurement least disturbed by that.
+    const ROUNDS = 3
+    let reuse = Infinity
+    let rebuild = Infinity
+    for (let round = 0; round < ROUNDS; round++) {
+      t0 = process.hrtime.bigint()
+      for (let i = 0; i < N; i++) {
+        tn.parse(SRC)
+      }
+      reuse = Math.min(reuse, Number(process.hrtime.bigint() - t0))
 
-    // Time N parses that REBUILD a fresh instance every call — the
-    // anti-pattern this guards against.
-    t0 = process.hrtime.bigint()
-    for (let i = 0; i < N; i++) {
-      new Tabnas().use(Chess).parse(SRC)
+      t0 = process.hrtime.bigint()
+      for (let i = 0; i < N; i++) {
+        new Tabnas().use(Chess).parse(SRC)
+      }
+      rebuild = Math.min(rebuild, Number(process.hrtime.bigint() - t0))
     }
-    const rebuild = Number(process.hrtime.bigint() - t0)
 
     const avgReuse = reuse / N
 
@@ -74,15 +83,16 @@ describe('perf', () => {
       )
     }
 
-    // 2) Reuse must be dramatically faster than rebuilding per parse.
-    //    Building the grammar dominates, so requiring >4x both documents
-    //    the win and would FAIL if a future change made representative
-    //    usage rebuild on every parse.
+    // 2) Reuse must be much faster than rebuilding per parse. Building the
+    //    grammar dominates, so if a future change made representative usage
+    //    rebuild on every parse the ratio would fall to about 1x. A 2x floor
+    //    still fails that by a wide margin; >4x, the floor this test once
+    //    had, failed on shared runners that measured 3.4x and 4.0x.
     assert.ok(
-      rebuild >= 4 * reuse,
+      rebuild >= 2 * reuse,
       `rebuild-per-parse is not dominated by reuse as expected: ` +
         `rebuild=${(rebuild / 1e6).toFixed(2)}ms reuse=${(reuse / 1e6).toFixed(2)}ms ` +
-        `(ratio ${(rebuild / reuse).toFixed(1)}x, expected >4x). Building the grammar ` +
+        `(ratio ${(rebuild / reuse).toFixed(1)}x, expected >2x). Building the grammar ` +
         `should dominate — reuse a single instance.`,
     )
 
