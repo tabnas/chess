@@ -31,7 +31,7 @@ import (
 
 // VERSION is this module's version. It MUST equal ts/package.json
 // "version": TestVersionMatchesPackageJSON fails the build if they drift.
-const VERSION = "0.1.11"
+const VERSION = "0.1.12"
 
 // --- BEGIN EMBEDDED chess-grammar.jsonic ---
 const grammarText = `
