@@ -32,7 +32,7 @@ see [`AGENTS.md`](AGENTS.md), and for the reasoning behind them
 | **node:test + dist layout** | Tests are authored in TS under `ts/test/*.test.ts`, compiled to `dist-test/`, run with `node --test "dist-test/*.test.js"`. `src` → `dist`, `test` → `dist-test`. No bundler, no jest. |
 | **doc-examples harness** | `ts/test/doc-examples.test.ts` is identical across tabnas repos. It scans markdown, runs ` ```js ` blocks that contain a `// =>` assertion, and checks each `<expr> // => <expected>`. Keep it; your README examples become tests for free. |
 | **Diataxis doc set** | `ts/doc/{tutorial,guide,reference,concepts}.md` (+ `go/doc/`). One file per quadrant, per runtime. Rewrite the prose; keep the four-file shape. |
-| **Makefile / CI shape** | Root `Makefile` wraps every runtime this repo carries (`build`/`test`/`clean`/`reset`, `publish-ts`, `publish-go V=x.y.z`, `tags-go`), one `<name>-ts`/`-go`/`-rs` target per side. `.github/workflows/build.yml` has a `build` (Node, multi-OS) and `build-go` job. Reuse the structure; swap the package name. |
+| **Makefile / CI shape** | Root `Makefile` wraps every runtime this repo carries (`build`/`test`/`clean`/`reset`, `publish-ts`, `publish-go V=x.y.z`, `tags-go`), one `<name>-ts`/`-go`/`-rs` target per side. `.github/workflows/ci.yml` is a thin caller of the org's reusable `tabnas/.github/.github/workflows/polyglot-ci.yml@main`, and this repo passes it one input, `deps: "parser debug jsonic railroad"`. The reusable workflow owns the matrix: `ts/` on Linux, macOS and Windows under Node `24.x`, `go/` on Linux and macOS under Go `1.24`. It clones each `deps` repo beside this one, builds it, and uses it in place of the published copy (linked over `node_modules/@tabnas/<name>`, and added to a `go.work`), so a sibling left off the list is used only at its published version. A new plugin passes its sibling closure as `deps`, in dependency-first order: its engine and base, and the tabnas repos those need in turn. ZON, on jsonic, passes `deps: "parser support debug json jsonic"`. It needs no `build-order`: the default, `deps` followed by the plugin itself, is right for a plugin nothing else depends on. Reuse the structure; swap the package name. |
 | **package.json conventions** | Engine deps (`@tabnas/parser`, and `@tabnas/jsonic`/`@tabnas/abnf` if you base on one) are **`peerDependencies`** at the deliberately open range `">=0"`, so an install resolves the latest published engine, each mirrored as a `"*"` **devDependency**. `@tabnas/debug` and `@tabnas/railroad` are dev-only `"*"` entries, and so is `@tabnas/support` once your tests use the shared fixture runner (this repo's do not). **No `file:` paths**: monorepo wiring lives outside `package.json` (see §4). `engines.node` is `>=24`. |
 
 ### ZON-specific — rewrite for your format
@@ -225,15 +225,28 @@ editing it.
   `package.json`.
 
 **Go needs nothing extra.** `go/go.mod` `require`s the published modules
-directly (`github.com/tabnas/{jsonic,json,parser}/go v0.2.0`) with **no
-`replace` directive**, so `go build ./... && go test -v ./...` resolves
-them from the module proxy in a bare checkout.
+directly, with **no `replace` directive**, so
+`go build ./... && go test -v ./...` resolves them from the module proxy
+in a bare checkout. This repo requires only `github.com/tabnas/parser/go`.
+ZON also requires `github.com/tabnas/jsonic/go`, and
+`github.com/tabnas/support/go` for its parity test.
+
+No version is given here on purpose. Each require names its module's
+**latest published version**, because versions track the latest release
+(see `CLAUDE.md`). Add one with `go get <module>@latest` rather than
+copying a version from another repo's `go.mod`. From then on, each
+release of your plugin moves every tabnas require to that module's
+current release, and an engine release reaches each dependent in a
+`deps(go)` pull request. The `GOWORK=off` step in CI builds against
+exactly the versions `go.mod` names.
 
 ### Node engine
 
-`engines.node` is `>=24`, but the build and tests **run on Node 22** —
-you'll just see harmless `npm warn EBADENGINE` lines. Don't let those warnings
-read as failures.
+`engines.node` is `>=24`, and CI builds and tests on Node `24.x`, the
+reusable workflow's default `node-version` (see the CI row in §1), so
+the declared floor is the version that is tested. Use Node 24 or later
+locally too. On an older Node, npm prints `npm warn EBADENGINE` lines,
+and no CI run covers that combination.
 
 ### How the doc-examples harness resolves `require()`
 
