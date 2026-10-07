@@ -248,11 +248,16 @@ an inferred field would make the parser a chess engine, and a bad one.
 TypeScript (from `ts/`):
 
 ```bash
-npm install            # installs the @tabnas/parser peer
-npm run build          # node embed-grammar.js && tsc --build src test
-npm test               # node --enable-source-maps --test "dist-test/*.test.js"
+npm install            # every devDependency from the registry: @tabnas/{debug,jsonic,parser,railroad}, typescript, @types/node
+npm test               # builds first (pretest), then node --test over dist-test/*.test.js and test/docs.test.js
 make diagram           # regenerate doc/grammar.{svg,txt} from the live grammar
 ```
+
+`pretest` runs `npm run build`
+(`node embed-grammar.js && tsc --build src && tsc --build test`) before
+every `npm test`, so there is no separate build step; `npm run build`
+alone embeds and compiles without testing. `@tabnas/parser` is also the
+peer dependency, which npm 7 and later install too.
 
 Go (from `go/`):
 
@@ -282,7 +287,9 @@ below on `test-web`'s ordering), `make reset` rebuilds from clean, `make diagram
 regenerates the railroad diagram, `make tidy-go` tidies the Go module,
 `make tags-go` lists `go/v*` tags, `make publish-ts` publishes the npm
 package, and `make publish-go V=x.y.z` injects V into the `const VERSION`
-in `go/chess.go`, then commits, tags `go/vX.Y.Z` and pushes.
+in `go/chess.go`, then commits, tags `go/vX.Y.Z` and pushes. Neither
+publish target is the release path: see "Releasing" and
+"`make publish-ts` and `make publish-go` are not the release path".
 
 ## Verify your work
 
@@ -296,7 +303,7 @@ make build && make test      # TS, Go, Rust AND the web component — the check 
 Narrower, when iterating:
 
 ```bash
-(cd ts && npm test)                    # `pretest` builds first
+(cd ts && npm test)                    # `pretest` builds first, then dist-test/ and test/docs.test.js
 (cd go && go test ./...)               # unit tests + the shared spec fixtures
 (cd rs && cargo test --all-targets)    # the same two, again
 ```
@@ -313,9 +320,12 @@ around it; the wiring is fixed instead, and
 `make ax-stale-test-artifact` in tabnas/admin keeps it fixed.
 
 Note that the Makefile's aggregate targets include `web/`: `test-web`
-bundles the web component (via `build-web`, which needs `build-ts` first —
-the Makefile orders this for you), so a TS change that breaks the bundle
-surfaces in `make test`, not just in `web/`.
+builds and tests the web component (`build-web` runs after `build-ts`).
+The bundle does not use this repository's `ts/`, though: `web/src`
+imports `@tabnas/chess`, which `web/package.json` installs from the
+registry, and `admin/scripts/link.sh` wires only each repository's `ts/`,
+not `web/`. So `make test` shows a TS change in the component only once
+that change is released.
 
 What "correct" means here, in order of authority:
 
@@ -416,11 +426,14 @@ The steps, in order:
    published one. Reinstalling is the part that matters.
 
    One thing a clean install does **not** isolate:
-   `ts/test/doc-examples.test.*` resolves `@tabnas/*` by filesystem path
-   (`const TABNAS = path.join(REPO, '..')`), not through `node_modules`. If
-   unbuilt sibling checkouts sit beside this repo, those blocks fail with
-   `MODULE_NOT_FOUND` no matter what you installed — build the siblings, or
-   verify somewhere they are absent.
+   `ts/test/doc-examples.test.*` resolves a doc example's `require`
+   through `node_modules` first, but a `@tabnas/*` package that is not
+   installed falls back to the sibling checkout `../<x>/ts`
+   (`const TABNAS = path.join(REPO, '..')`), and `@tabnas/chess` itself
+   to this repository's `ts/`. An example that requires a package
+   `ts/package.json` does not declare therefore runs against a sibling
+   checkout, not a published release, and fails with `MODULE_NOT_FOUND`
+   if that checkout is absent or unbuilt.
 
    `npm test` already compiles here: `ts/package.json` sets `pretest` to
    `npm run build`, which npm runs automatically. No separate build step is

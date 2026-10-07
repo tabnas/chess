@@ -335,7 +335,7 @@ The shadow root also exposes `::part(wrap)`, `::part(board)`,
 npm install
 npm run build          # dist/
 npm start              # serve the demo with rebuild-on-save
-npm test               # engine tests, then the component in Chromium
+npm test               # builds first (pretest), then the engine tests and the component in Chromium
 ```
 
 `build.js` produces:

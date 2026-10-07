@@ -62,12 +62,14 @@ reaches the engine by path, as a sibling checkout:
   chess/rs/      # this crate
 ```
 
-That is the same layout the TypeScript and Go sides already assume for
-local development, and what CI provides by cloning the dependency
-repositories beside this one. Clone `tabnas/parser` next to `tabnas/chess` and
-`cargo build` works; move it and the path in `Cargo.toml` is the one line
-to change. The release workflow swaps that path for the engine's newest
-crates.io version when it publishes this crate.
+That is the sibling layout the tabnas folder uses for the TypeScript and
+Go sides too, where the wiring is optional. Here the crate needs it to
+build at all, and no CI check compiles this crate on a push or pull
+request, so the checkout is yours to provide. Clone `tabnas/parser` next to
+`tabnas/chess` and `cargo build` works; move it and the path in
+`Cargo.toml` is the one line to change. The release workflow swaps that
+path for the engine's newest crates.io version when it publishes this
+crate.
 
 ## What differs from the other two ports
 
@@ -105,6 +107,7 @@ that says `{"rank":1}` means the integer, and so does a consumer.
 ```sh
 cargo build --all-targets
 cargo test --all-targets
+cargo test --doc             # this README's examples, which --all-targets skips
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all --check
 ```

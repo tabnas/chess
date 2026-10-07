@@ -20,24 +20,33 @@ make build   # builds ts/, go/, rs/ and the web component
 make test    # tests the same
 
 # or per stack:
-cd ts && npm install && npm run build && npm test
+cd ts && npm install && npm test    # pretest builds first
 cd go && go build ./... && go test ./...
 cd rs && cargo build --all-targets && cargo test --all-targets
 ```
 
-Tabnas repos resolve their unpublished `@tabnas/*` siblings from
-**side-by-side checkouts**, so clone this repo's tabnas dependencies into the
-same parent directory. Check `.github/workflows/` for the exact list. `rs/`
-needs one of those checkouts even for a plain build: `rs/Cargo.toml` takes
-the engine crate as a path dependency on `../../parser/rs`. The engine is on
+The TypeScript and Go sides install published packages, `@tabnas/*` from
+the npm registry and `github.com/tabnas/*/go` from the module proxy, so they
+need no other checkout. Sibling checkouts are optional there: to work
+against unreleased siblings, clone them into the same parent directory and
+run admin's `scripts/link.sh`, which links them over
+`ts/node_modules/@tabnas/*` and writes a `go.work` one level up. Never commit
+that wiring. CI builds the siblings named in `.github/workflows/ci.yml`'s
+`deps` from source. `rs/` is the exception: it needs a checkout of
+`tabnas/parser` even for a plain build, because `rs/Cargo.toml` takes the
+engine crate as a path dependency on `../../parser/rs`. The engine is on
 crates.io as `tabnas-parser`, but the committed manifest stays path-only, and
 the release workflow swaps in a crates.io version only when it publishes
 `tabnas-chess`.
 
 ## Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/) — release
-automation derives versions and changelogs from them, so this is required:
+[Conventional Commits](https://www.conventionalcommits.org/) are required,
+for commit messages and PR titles alike. PRs are squash-merged, so a PR's
+title is its commit message, and the GitHub Release that each release creates
+lists those titles in its generated notes. They do not set the version: a
+release is its own version-bump pull request, then a `release.yml` dispatch
+(see [`AGENTS.md`](AGENTS.md), "Releasing"). For example:
 
 ```
 feat: add lax mode for trailing commas
