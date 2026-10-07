@@ -33,7 +33,7 @@ see [`AGENTS.md`](AGENTS.md), and for the reasoning behind them
 | **doc-examples harness** | `ts/test/doc-examples.test.ts` is identical across tabnas repos. It scans markdown, runs ` ```js ` blocks that contain a `// =>` assertion, and checks each `<expr> // => <expected>`. Keep it; your README examples become tests for free. |
 | **Diataxis doc set** | `ts/doc/{tutorial,guide,reference,concepts}.md` (+ `go/doc/`). One file per quadrant, per runtime. Rewrite the prose; keep the four-file shape. |
 | **Makefile / CI shape** | Root `Makefile` wraps every runtime this repo carries (`build`/`test`/`clean`/`reset`, `publish-ts`, `publish-go V=x.y.z`, `tags-go`), one `<name>-ts`/`-go`/`-rs` target per side. `.github/workflows/build.yml` has a `build` (Node, multi-OS) and `build-go` job. Reuse the structure; swap the package name. |
-| **package.json conventions** | Engine deps (`@tabnas/parser`, and `@tabnas/jsonic`/`@tabnas/abnf` if you base on one) are **`peerDependencies`** (`^0.2.0`), each mirrored as a `file:../../<dep>/ts` **devDependency** for monorepo dev. `@tabnas/debug` / `@tabnas/railroad` are dev-only `file:` deps. `engines.node` is `>=24`. |
+| **package.json conventions** | Engine deps (`@tabnas/parser`, and `@tabnas/jsonic`/`@tabnas/abnf` if you base on one) are **`peerDependencies`** at the deliberately open range `">=0"`, so an install resolves the latest published engine, each mirrored as a `"*"` **devDependency**. `@tabnas/debug` and `@tabnas/railroad` are dev-only `"*"` entries, and so is `@tabnas/support` once your tests use the shared fixture runner (this repo's do not). **No `file:` paths**: monorepo wiring lives outside `package.json` (see §4). `engines.node` is `>=24`. |
 
 ### ZON-specific — rewrite for your format
 
@@ -192,31 +192,37 @@ JSON-family formats that genuinely reuse jsonic's relaxed-JSON behaviour
 
 ## 4. Dev-environment realities
 
-### The `file:` deps don't exist in an isolated checkout
+### Two dev layouts, both green — and no `file:` paths
 
-`ts/package.json` lists `"@tabnas/parser": "file:../../parser/ts"` (and
-jsonic/debug/railroad) as devDependencies — the **monorepo dev layout**,
-where every tabnas package is a sibling directory. In an isolated
-single-repo clone those paths don't exist, so `npm install` creates
-**dangling symlinks** and `tsc` then fails with `Cannot find module
-'@tabnas/parser'`. The packages **are published on npm**, so install the
-registry versions over the symlinks.
+The `@tabnas/*` deps are plain registry ranges (`peerDependencies` at
+`">=0"`, mirrored as `"*"` devDependencies — see §1). There are **no
+`file:` paths in `package.json`**: nothing in the committed manifest
+points at a sibling directory, so both layouts below build without
+editing it.
 
-**Verified green-build recipe for an isolated `ts/` checkout:**
+- **Isolated single-repo checkout** — nothing extra to do. `npm install`
+  resolves the `"*"` devDependencies from the registry, so the build runs
+  against the published `@tabnas/*` packages:
 
-```bash
-cd ts
-npm install            # pulls typescript + @types/node; leaves dangling @tabnas symlinks (harmless)
-npm install --no-save @tabnas/parser@^0.2.0 @tabnas/jsonic@^0.2.0 \
-                      @tabnas/debug@^0.2.0 @tabnas/railroad@^0.2.0
-npm run build          # embed-grammar.js + tsc --build src test
-npm test               # node --test dist-test/*.test.js  (40 tests, incl. debug-model + doc-examples)
-```
+  ```bash
+  cd ts
+  npm install            # resolves @tabnas/* from the registry, plus typescript + @types/node
+  npm run build          # embed-grammar.js + tsc --build src test
+  npm test               # node --test dist-test/*.test.js  (40 tests, incl. debug-model + doc-examples)
+  ```
 
-`--no-save` replaces the symlinks with real registry installs without
-rewriting `package.json` (keep the `file:` deps for monorepo dev). Drop
-`@tabnas/jsonic` from the install line for a non-jsonic plugin; add
-whatever base you actually use.
+  Drop `@tabnas/jsonic` from your deps for a non-jsonic plugin; add
+  whatever base you actually use.
+
+- **Monorepo (fleet) layout** — every tabnas repo a sibling directory.
+  Run the admin repo's **`make link`** (`scripts/link.sh`) after
+  installing: it overlays `node_modules/@tabnas` symlinks onto the
+  installed packages and generates a `go.work` covering the sibling
+  modules, so you build against sibling working trees instead of the
+  registry. The link graph is derived from each repo's `ts/package.json`
+  and `go/go.mod`, **no tracked file is edited**, and re-running it is
+  idempotent. That is where monorepo wiring lives, not in
+  `package.json`.
 
 **Go needs nothing extra.** `go/go.mod` `require`s the published modules
 directly (`github.com/tabnas/{jsonic,json,parser}/go v0.2.0`) with **no
