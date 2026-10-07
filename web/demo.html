@@ -587,13 +587,13 @@ rule: element: close: [
   the grammar for you.
 </p>
 
-<h3>One table, two languages</h3>
+<h3>One table, three languages</h3>
 <p>
   The grammar lives in one file. The build embeds the same compiled JSON into
-  the TypeScript package <em>and</em> the Go module, so the two
-  implementations cannot drift apart unnoticed, which is exactly the sort of
-  drift you'd never catch until a user reports that one of them parses their
-  file and the other doesn't.
+  the TypeScript package, the Go module <em>and</em> the Rust crate, so the
+  three implementations cannot drift apart unnoticed, which is exactly the
+  sort of drift you'd never catch until a user reports that one of them
+  parses their file and another doesn't.
 </p>
 
 <div class="cols">
@@ -686,8 +686,8 @@ db[0].Moves[0].Piece  <span class="c">// "P"</span></pre>
 <div class="cards">
   <div class="card">
     <h3><a href="https://github.com/tabnas/chess">tabnas/chess</a></h3>
-    <p>This component, the grammar behind it, both runtimes and the shared
-      fixtures.</p>
+    <p>This component, the grammar behind it, all three runtimes and the
+      shared fixtures.</p>
   </div>
   <div class="card">
     <h3><a href="https://tabnas.dev">tabnas.dev</a></h3>

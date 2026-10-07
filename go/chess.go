@@ -12,7 +12,7 @@
 //	1. e4 e5 2. Nf3 {The main line.} Nc6 $1 (2... d6 3. d4) 1/2-1/2
 //
 // This is a port of the canonical TypeScript implementation. The grammar
-// is not duplicated: both runtimes embed the same JSON, generated from
+// is not duplicated: all three runtimes embed the same JSON, generated from
 // chess-grammar.jsonic by ts/embed-grammar.js. See ../ts/doc/concepts.md
 // for why the model and the grammar look the way they do.
 package tabnaschess

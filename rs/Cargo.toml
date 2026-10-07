@@ -14,9 +14,10 @@ categories = ["parsing"]
 [dependencies]
 # The engine is on crates.io as tabnas-parser, but this committed manifest
 # stays path-only: a sibling checkout of github.com/tabnas/parser, one
-# directory up, the same layout the TypeScript and Go sides already assume.
-# crates-release.yml rewrites it into a crates.io requirement when it
-# publishes this crate. See README.md.
+# directory up. The TypeScript and Go sides install the engine from npm and
+# the Go module proxy instead, and need no checkout. crates-release.yml
+# rewrites this path into a crates.io requirement when it publishes this
+# crate. See README.md.
 tabnas = { package = "tabnas-parser", path = "../../parser/rs" }
 indexmap = { version = "2.2", features = ["serde"] }
 regex = "1.10"

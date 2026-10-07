@@ -8,10 +8,9 @@
 # stale copy.
 
 # Serial, always. `build-ts` runs ts/embed-grammar.js, which REWRITES the
-# embedded grammar inside go/chess.go and rs/src/lib.rs, and `build-web`
-# bundles what `build-ts` compiled. Under `make -j` those writes race the
-# reads, so the ordering the aggregate targets spell out has to be the
-# ordering make uses.
+# embedded grammar inside go/chess.go and rs/src/lib.rs. Under `make -j`
+# those writes race the Go and Rust builds' reads, so the ordering the
+# aggregate targets spell out has to be the ordering make uses.
 .NOTPARALLEL:
 
 .PHONY: all build test clean reset diagram \
@@ -42,7 +41,8 @@ publish-ts: test-ts
 	cd ts && npm publish --access public
 
 # --- Web component (package in web/) ---
-# Bundles the TypeScript package, so build-ts has to have run first.
+# Bundles @tabnas/chess as web/package.json installs it, from the npm
+# registry, not the build in ts/: nothing under web/ reads ts/.
 build-web: build-ts
 	cd web && npm run build
 

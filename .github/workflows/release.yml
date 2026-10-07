@@ -13,7 +13,7 @@
 # TWO PACKAGES, TWO TAG LINES, and that is deliberate:
 #
 #   ts/  -> @tabnas/chess       ts/v*   library, in admin/publish.sh ORDER
-#   web/ -> @tabnas/chess-game  web/v*  bundled <chess-game> component
+#   web/ -> @tabnas/chess-view  web/v*  bundled <chess-view> component
 #
 # The component carries its own version line because it is a BUILT
 # artifact whose contents change when the BUNDLE changes — a new parser,
@@ -217,7 +217,7 @@ jobs:
     with:
       tag: ${{ needs.publish-npm.outputs.clib-tag }}
 
-  # @tabnas/chess-game, the bundled <chess-game> web component in web/.
+  # @tabnas/chess-view, the bundled <chess-view> web component in web/.
   # It carries its own version line and its own tag (`web/v*`) rather than
   # riding the library's: it is a built artifact whose contents change when
   # the BUNDLE changes — a new parser, a board fix — which is not the same

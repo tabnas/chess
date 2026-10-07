@@ -8,7 +8,7 @@
 // library and needs no jsonic at run time. @tabnas/jsonic is a
 // build-time dependency only.
 //
-// This is what keeps the two runtimes honest: they do not each have a
+// This is what keeps the three runtimes honest: they do not each have a
 // grammar, they have THE grammar.
 //
 // Never hand-edit between the BEGIN/END markers: edit
