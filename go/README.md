@@ -4,10 +4,10 @@ A [Tabnas](https://github.com/tabnas/parser) grammar plugin that parses
 **chess notation**: PGN games and the SAN moves inside them.
 
 A port of the canonical TypeScript package
-[`@tabnas/chess`](../ts/README.md). The grammar is not duplicated: both
-runtimes embed the same JSON, generated from
-[`chess-grammar.jsonic`](../chess-grammar.jsonic), and both run the same
-`test/spec/*.tsv` conformance fixtures.
+[`@tabnas/chess`](../ts/README.md). The grammar is not duplicated: all
+three runtimes embed the same JSON, generated from
+[`chess-grammar.jsonic`](../chess-grammar.jsonic), and all three run the
+same `test/spec/*.tsv` conformance fixtures.
 
 The repository hub, with the scope table and the grammar diagram, is
 [`../README.md`](../README.md).

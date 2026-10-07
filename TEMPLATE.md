@@ -27,8 +27,8 @@ see [`AGENTS.md`](AGENTS.md), and for the reasoning behind them
 
 | Piece | What to keep |
 |---|---|
-| **Dual-runtime layout** | `ts/` is canonical, `go/` tracks it. TS wins on any behaviour disagreement; change Go to match. Drop `go/` entirely if you only want TS. |
-| **Single-source grammar + embed** | One `*-grammar.jsonic` at the repo root is the only hand-edited grammar. `ts/embed-grammar.js` copies it verbatim into the `grammarText` literal in **both** `ts/src/<plugin>.ts` and `go/<plugin>.go`, between `// --- BEGIN/END EMBEDDED ... ---` markers. Never hand-edit between the markers; edit the `.jsonic` and run `npm run embed`. The Go embed rejects backticks (Go raw-string limitation). |
+| **Three-runtime layout** | `ts/` is canonical; `go/` and `rs/` track it. TS wins on any behaviour disagreement; change Go and Rust to match. Drop `go/` and `rs/` entirely if you only want TS. |
+| **Single-source grammar + embed** | One `*-grammar.jsonic` at the repo root is the only hand-edited grammar. `ts/embed-grammar.js` copies it verbatim into a grammar literal in **all three** of `ts/src/<plugin>.ts`, `go/<plugin>.go` and `rs/src/lib.rs` (`GRAMMAR_TEXT`), between `// --- BEGIN/END EMBEDDED ... ---` markers. Never hand-edit between the markers; edit the `.jsonic` and run `npm run embed`. The Go embed rejects backticks (Go raw-string limitation), and the Rust embed rejects `"##` (the end of its `r##` raw string). |
 | **node:test + dist layout** | Tests are authored in TS under `ts/test/*.test.ts`, compiled to `dist-test/`, run with `node --test "dist-test/*.test.js"`. `src` → `dist`, `test` → `dist-test`. No bundler, no jest. |
 | **doc-examples harness** | `ts/test/doc-examples.test.ts` is identical across tabnas repos. It scans markdown, runs ` ```js ` blocks that contain a `// =>` assertion, and checks each `<expr> // => <expected>`. Keep it; your README examples become tests for free. |
 | **Diataxis doc set** | `ts/doc/{tutorial,guide,reference,concepts}.md` (+ `go/doc/`). One file per quadrant, per runtime. Rewrite the prose; keep the four-file shape. |

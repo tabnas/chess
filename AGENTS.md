@@ -127,7 +127,7 @@ an inferred field would make the parser a chess engine, and a bad one.
 | [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
 | [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`), published to crates.io. The engine crate is on crates.io too, as `tabnas-parser`, but the committed manifest stays path-only: the engine is a **path dependency on a sibling checkout** of `tabnas/parser`, `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`, which `crates-release.yml` rewrites into a crates.io requirement when it publishes. See [`rs/README.md`](rs/README.md). |
 | [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **All three** runtimes auto-discover and run every file here, so adding one covers TypeScript, Go and Rust together. See [`test/AGENTS.md`](test/AGENTS.md). |
-| [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
+| [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`, `port-deps.test.ts` (the three ports depend on the same tabnas repos, ADR-24; stamped from admin), and `docs.test.js` (the fast half of the prose gate, run by `npm test` straight from `test/`). |
 | [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
 | [`rs/tests/`](rs/tests/) | `chess_test.rs`, `parity_test.rs`, `perf_test.rs` and `version_test.rs` — the same jobs again. The crate's and the README's examples run as doctests, which `cargo test --all-targets` does NOT cover. |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by all three runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
@@ -447,13 +447,17 @@ The steps, in order:
    ```bash
    (
      cd go
-     go mod edit -json | grep -q '"Replace": null' || { echo 'go.mod has a replace'; exit 1; }
+     go mod edit -json | jq -e '.Replace == null' >/dev/null || { echo 'go.mod has a replace'; exit 1; }
      GOWORK=off go test -count=1 ./...
    )
    ```
 
    `-count=1` because shared fixtures live outside the Go module, so a
-   changed corpus does not invalidate the test cache.
+   changed corpus does not invalidate the test cache. The check asks `jq`,
+   not `grep`: current Go leaves the `Replace` key out when there is no
+   replace, where older Go printed `"Replace": null`, and `jq` reads a
+   missing key as null, so the check passes on a clean `go.mod` and fails
+   on a replace either way.
 3. **Merge the bump through a reviewed PR.** That is the house convention —
    `CONTRIBUTING.md` squash-merges PRs and takes the title as the commit
    message — and what `release.yml`'s own header describes. A direct push to
@@ -637,7 +641,7 @@ file. The codes remain the engine's; re-wording one is not minting a new
 one.
 
 Of the inherited codes, `unterminated_comment` is exercised by fixture:
-`test/spec/comments.tsv` pins `ERROR:unterminated_comment` in both
+`test/spec/comments.tsv` pins `ERROR:unterminated_comment` in all three
 runtimes.
 
 The other error rows are a weaker contract: `test/spec/errors.tsv` pins

@@ -3,7 +3,8 @@
 // Cases that a `test/spec/*.tsv` fixture cannot express: option handling,
 // error messages, the exported helpers, and the plugin's own surface.
 // Mirrors ts/test/chess.test.ts case for case. Everything expressible as
-// `input -> JSON` belongs in a fixture instead, where BOTH runtimes run it.
+// `input -> JSON` belongs in a fixture instead, where ALL THREE runtimes
+// run it.
 
 package tabnaschess
 

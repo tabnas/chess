@@ -3,8 +3,9 @@
 // Cross-runtime conformance, driven by the shared `test/spec/*.tsv`
 // fixtures at the repo root (see ../test/AGENTS.md).
 //
-// `ts/test/parity.test.ts` discovers and runs the SAME files, so the two
-// implementations cannot drift without one of them going red.
+// `ts/test/parity.test.ts` and `rs/tests/parity_test.rs` discover and run
+// the SAME files, so no two of the three implementations can drift without
+// one of them going red.
 
 package tabnaschess
 

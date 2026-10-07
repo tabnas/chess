@@ -2,11 +2,11 @@
 
 // The Go `const VERSION` must equal ts/package.json "version".
 //
-// ts/test/version.test.ts checks the TypeScript export against the SAME
-// file, so the two runtimes cannot drift apart either. There is no skip
-// path: an unreadable package.json FAILS here, because a version check
-// that silently does not run is the exact failure mode it exists to
-// prevent.
+// ts/test/version.test.ts and rs/tests/version_test.rs check their own
+// runtimes against the SAME file, so none of the three can drift apart.
+// There is no skip path: an unreadable package.json FAILS here, because a
+// version check that silently does not run is the exact failure mode it
+// exists to prevent.
 
 package tabnaschess
 
