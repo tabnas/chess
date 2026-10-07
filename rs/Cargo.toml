@@ -12,9 +12,11 @@ keywords = ["chess", "pgn", "san", "notation", "parser"]
 categories = ["parsing"]
 
 [dependencies]
-# The engine is not published to crates.io, so this is a sibling checkout
-# of github.com/tabnas/parser, one directory up — the same layout the
-# TypeScript and Go sides already assume. See README.md.
+# The engine is on crates.io as tabnas-parser, but this committed manifest
+# stays path-only: a sibling checkout of github.com/tabnas/parser, one
+# directory up, the same layout the TypeScript and Go sides already assume.
+# crates-release.yml rewrites it into a crates.io requirement when it
+# publishes this crate. See README.md.
 tabnas = { package = "tabnas-parser", path = "../../parser/rs" }
 indexmap = { version = "2.2", features = ["serde"] }
 regex = "1.10"

@@ -50,8 +50,11 @@ bag. Neither touches `color`: that is the caller's to choose, and only
 
 ## Depending on it
 
-The engine crate is not published to crates.io, so this crate reaches it
-by path, as a sibling checkout:
+`tabnas-chess` is on crates.io, and so is the engine crate it depends on,
+`tabnas-parser`: add it to a project with `cargo add tabnas-chess`.
+
+The `Cargo.toml` in this repository is not the published one, though. It
+reaches the engine by path, as a sibling checkout:
 
 ```text
 <workspace>/
@@ -63,7 +66,8 @@ That is the same layout the TypeScript and Go sides already assume for
 local development, and what CI provides by cloning the dependency
 repositories beside this one. Clone `tabnas/parser` next to `tabnas/chess` and
 `cargo build` works; move it and the path in `Cargo.toml` is the one line
-to change.
+to change. The release workflow swaps that path for the engine's newest
+crates.io version when it publishes this crate.
 
 ## What differs from the other two ports
 

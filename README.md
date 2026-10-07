@@ -43,10 +43,11 @@ npm install @tabnas/parser @tabnas/chess
 go get github.com/tabnas/chess/go@latest
 ```
 
-Rust lives in [`rs/`](rs/) as the `tabnas-chess` crate. It is not on
-crates.io yet, because the engine crate it depends on is not either, so
-it is used from a checkout beside one of `tabnas/parser`.
-[`rs/README.md`](rs/README.md) has the layout.
+Rust lives in [`rs/`](rs/) as the `tabnas-chess` crate. It is on
+crates.io, and so is the engine crate it depends on, so
+`cargo add tabnas-chess` is all a Rust project needs. This repository's
+own copy is not a registry build: it is used from a checkout beside one
+of `tabnas/parser`. [`rs/README.md`](rs/README.md) has the layout.
 
 ## One tiny example
 

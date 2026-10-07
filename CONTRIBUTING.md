@@ -28,8 +28,11 @@ cd rs && cargo build --all-targets && cargo test --all-targets
 Tabnas repos resolve their unpublished `@tabnas/*` siblings from
 **side-by-side checkouts**, so clone this repo's tabnas dependencies into the
 same parent directory. Check `.github/workflows/` for the exact list. `rs/`
-needs one of those checkouts even for a plain build: the engine crate is not
-published to crates.io, so it is a path dependency on `../../parser/rs`.
+needs one of those checkouts even for a plain build: `rs/Cargo.toml` takes
+the engine crate as a path dependency on `../../parser/rs`. The engine is on
+crates.io as `tabnas-parser`, but the committed manifest stays path-only, and
+the release workflow swaps in a crates.io version only when it publishes
+`tabnas-chess`.
 
 ## Commit messages
 
