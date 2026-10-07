@@ -56,13 +56,13 @@ Four-quadrant [Diátaxis](https://diataxis.fr) docs:
 
 ```bash
 npm install
-npm run build          # embed-grammar.js, then tsc --build src test
-npm test               # node --test dist-test/*.test.js
+npm test               # builds first, then node --test over dist-test/*.test.js and test/docs.test.js
 ```
 
-`npm run build` embeds [`../chess-grammar.jsonic`](../chess-grammar.jsonic)
-into `src/chess.ts` first. Never hand-edit between the `BEGIN/END EMBEDDED`
-markers; edit the grammar and re-run `npm run embed`.
+`npm test` runs `npm run build` first, as its `pretest`, and the build
+embeds [`../chess-grammar.jsonic`](../chess-grammar.jsonic) into
+`src/chess.ts` before compiling. Never hand-edit between the
+`BEGIN/END EMBEDDED` markers; edit the grammar and re-run `npm run embed`.
 
 ## License
 

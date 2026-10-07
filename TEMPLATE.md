@@ -208,9 +208,11 @@ editing it.
   ```bash
   cd ts
   npm install            # resolves @tabnas/* from the registry, plus typescript + @types/node
-  npm run build          # embed-grammar.js + tsc --build src test
-  npm test               # node --test dist-test/*.test.js  (40 tests, incl. debug-model + doc-examples)
+  npm test               # builds first (pretest), then node --test over dist-test/*.test.js and test/docs.test.js
   ```
+
+  `pretest` runs `npm run build` (`embed-grammar.js`, then `tsc --build`
+  on `src` and `test`), so a separate build step only builds twice.
 
   Drop `@tabnas/jsonic` from your deps for a non-jsonic plugin; add
   whatever base you actually use.

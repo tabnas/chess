@@ -125,7 +125,7 @@ an inferred field would make the parser a chess engine, and a bad one.
 | [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **all three** of `ts/src/chess.ts`, `go/chess.go` and `rs/src/lib.rs`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; no runtime parses jsonic at run time. |
 | [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/chess` package. Plugin in `src/chess.ts`. Peer-depends on `@tabnas/parser`. |
 | [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
-| [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`). The engine crate is NOT published to crates.io, so it is a **path dependency on a sibling checkout** of `tabnas/parser`: `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`. See [`rs/README.md`](rs/README.md). |
+| [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`), published to crates.io. The engine crate is on crates.io too, as `tabnas-parser`, but the committed manifest stays path-only: the engine is a **path dependency on a sibling checkout** of `tabnas/parser`, `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`, which `crates-release.yml` rewrites into a crates.io requirement when it publishes. See [`rs/README.md`](rs/README.md). |
 | [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **All three** runtimes auto-discover and run every file here, so adding one covers TypeScript, Go and Rust together. See [`test/AGENTS.md`](test/AGENTS.md). |
 | [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`. |
 | [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`. |
@@ -248,11 +248,16 @@ an inferred field would make the parser a chess engine, and a bad one.
 TypeScript (from `ts/`):
 
 ```bash
-npm install            # installs the @tabnas/parser peer
-npm run build          # node embed-grammar.js && tsc --build src test
-npm test               # node --enable-source-maps --test "dist-test/*.test.js"
+npm install            # every devDependency from the registry: @tabnas/{debug,jsonic,parser,railroad}, typescript, @types/node
+npm test               # builds first (pretest), then node --test over dist-test/*.test.js and test/docs.test.js
 make diagram           # regenerate doc/grammar.{svg,txt} from the live grammar
 ```
+
+`pretest` runs `npm run build`
+(`node embed-grammar.js && tsc --build src && tsc --build test`) before
+every `npm test`, so there is no separate build step; `npm run build`
+alone embeds and compiles without testing. `@tabnas/parser` is also the
+peer dependency, which npm 7 and later install too.
 
 Go (from `go/`):
 
@@ -272,8 +277,9 @@ cargo fmt --all --check
 ```
 
 The Rust crate needs a sibling checkout of `tabnas/parser` beside this
-repo: the engine crate is not on crates.io, so `rs/Cargo.toml` reaches it
-by path (`../../parser/rs`). See [`rs/README.md`](rs/README.md).
+repo: `rs/Cargo.toml` reaches the engine crate by path (`../../parser/rs`),
+not from crates.io, although `tabnas-parser` is published there. See
+[`rs/README.md`](rs/README.md).
 
 The repo-root [`Makefile`](Makefile) wraps all four sides: `make
 build|test|clean` run the TS, Go, Rust **and `web/`** parts (see the note
@@ -281,7 +287,9 @@ below on `test-web`'s ordering), `make reset` rebuilds from clean, `make diagram
 regenerates the railroad diagram, `make tidy-go` tidies the Go module,
 `make tags-go` lists `go/v*` tags, `make publish-ts` publishes the npm
 package, and `make publish-go V=x.y.z` injects V into the `const VERSION`
-in `go/chess.go`, then commits, tags `go/vX.Y.Z` and pushes.
+in `go/chess.go`, then commits, tags `go/vX.Y.Z` and pushes. Neither
+publish target is the release path: see "Releasing" and
+"`make publish-ts` and `make publish-go` are not the release path".
 
 ## Verify your work
 
@@ -295,7 +303,7 @@ make build && make test      # TS, Go, Rust AND the web component — the check 
 Narrower, when iterating:
 
 ```bash
-(cd ts && npm test)                    # `pretest` builds first
+(cd ts && npm test)                    # `pretest` builds first, then dist-test/ and test/docs.test.js
 (cd go && go test ./...)               # unit tests + the shared spec fixtures
 (cd rs && cargo test --all-targets)    # the same two, again
 ```
@@ -312,9 +320,12 @@ around it; the wiring is fixed instead, and
 `make ax-stale-test-artifact` in tabnas/admin keeps it fixed.
 
 Note that the Makefile's aggregate targets include `web/`: `test-web`
-bundles the web component (via `build-web`, which needs `build-ts` first —
-the Makefile orders this for you), so a TS change that breaks the bundle
-surfaces in `make test`, not just in `web/`.
+builds and tests the web component (`build-web` runs after `build-ts`).
+The bundle does not use this repository's `ts/`, though: `web/src`
+imports `@tabnas/chess`, which `web/package.json` installs from the
+registry, and `admin/scripts/link.sh` wires only each repository's `ts/`,
+not `web/`. So `make test` shows a TS change in the component only once
+that change is released.
 
 What "correct" means here, in order of authority:
 
@@ -384,11 +395,14 @@ The steps, in order:
    caught by `ts/test/version.test.ts`, `go/version_test.go` and
    `rs/tests/version_test.rs`.
 
-   The Rust crate is **not published** — the engine it depends on is not
-   on crates.io, so there is nothing for `cargo publish` to resolve
-   against. Its version site exists so the three ports report the same
-   version, not because a dispatch ships it; `release.yml` publishes npm
-   and tags the Go module, and neither job touches `rs/`. Regenerate
+   The Rust crate ships with the release too. Once the Go tag is on the
+   remote, `release.yml`'s `crates` job hands it to `crates-release.yml`,
+   which publishes `rs/` from that tag to crates.io over OIDC trusted
+   publishing. It first rewrites the path dependency on the engine into a
+   requirement on `tabnas-parser`'s newest stable crates.io version, so
+   `cargo publish` verify-builds against what a consumer gets. It skips a
+   version crates.io already has. A failed crates publish blocks and
+   unpublishes nothing: re-run that job to repair it. Regenerate
    `rs/Cargo.lock` after the bump (`cd rs && cargo update --workspace`)
    so `cargo build --locked` still resolves.
 2. Verify against the **published** dependencies rather than your checkout.
@@ -412,11 +426,14 @@ The steps, in order:
    published one. Reinstalling is the part that matters.
 
    One thing a clean install does **not** isolate:
-   `ts/test/doc-examples.test.*` resolves `@tabnas/*` by filesystem path
-   (`const TABNAS = path.join(REPO, '..')`), not through `node_modules`. If
-   unbuilt sibling checkouts sit beside this repo, those blocks fail with
-   `MODULE_NOT_FOUND` no matter what you installed — build the siblings, or
-   verify somewhere they are absent.
+   `ts/test/doc-examples.test.*` resolves a doc example's `require`
+   through `node_modules` first, but a `@tabnas/*` package that is not
+   installed falls back to the sibling checkout `../<x>/ts`
+   (`const TABNAS = path.join(REPO, '..')`), and `@tabnas/chess` itself
+   to this repository's `ts/`. An example that requires a package
+   `ts/package.json` does not declare therefore runs against a sibling
+   checkout, not a published release, and fails with `MODULE_NOT_FOUND`
+   if that checkout is absent or unbuilt.
 
    `npm test` already compiles here: `ts/package.json` sets `pretest` to
    `npm run build`, which npm runs automatically. No separate build step is
@@ -566,10 +583,13 @@ Testing against unreleased siblings means symlinked `node_modules`,
 `git add -A` is how it does.
 
 **`rs/Cargo.toml`'s path dependency is the exception, and it is
-deliberate.** The engine crate is not published anywhere, so a sibling
-checkout is not a local workaround for the Rust side — it is how the
-crate resolves, in a working tree and in CI alike. Leave it. Everything
-below is still forbidden:
+deliberate.** The engine crate is on crates.io, but the committed
+manifest stays path-only, so that no CI run turns red on the day the
+engine's minor version moves (the reason `crates-release.yml` gives).
+That workflow swaps the path for a crates.io requirement only in the
+copy it publishes. A sibling checkout is therefore not a local
+workaround for the Rust side: it is how the crate resolves in a working
+tree. Leave it. Everything below is still forbidden:
 
 - `go mod edit -replace …=/abs/path` — CI reports it as `replacement
   directory /… does not exist`.

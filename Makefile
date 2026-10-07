@@ -66,8 +66,9 @@ tidy-go:
 	cd go && go mod tidy
 
 # --- Rust (crate in rs/) ---
-# Depends on a sibling checkout of tabnas/parser for the engine crate,
-# which is not published to crates.io. See rs/README.md.
+# Depends on a sibling checkout of tabnas/parser for the engine crate:
+# rs/Cargo.toml names it by path, although it is on crates.io as
+# tabnas-parser. See rs/README.md.
 build-rs:
 	cd rs && cargo build --all-targets
 
