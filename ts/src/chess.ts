@@ -1043,4 +1043,7 @@ export function parseGame(src: string, options?: DatabaseOptions): Game | undefi
   return parse(src, options)[0]
 }
 
+export { translate } from './translate'
+export type { TranslationPart, TranslationParts } from './translate'
+
 export default Chess
