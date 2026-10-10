@@ -185,3 +185,23 @@ fn spec() {
         failures.join("\n\n")
     );
 }
+
+/// The documents `render.tsv` pins, which the render (`alchemy/render.alc`)
+/// wrote as alchemy ran it, held to lines of at most 79 characters: PGN's
+/// export format keeps a line under 80 (8.2.2.2), and the render keeps
+/// every line within 79, the parentheses of its variations included.
+#[test]
+fn render_line_width() {
+    let rows = load_spec(&Path::new(SPEC_DIR).join("render.tsv"));
+    assert!(!rows.is_empty(), "render.tsv: no cases");
+    for row in rows {
+        for line in row.input.split('\n') {
+            let width = line.chars().count();
+            assert!(
+                width <= 79,
+                "render.tsv:{}: {width} characters: {line}",
+                row.line
+            );
+        }
+    }
+}

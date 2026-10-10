@@ -57,7 +57,8 @@ const TRANSLATION: TranslationParts = Object.freeze({
       "A move's glyphs, comments and variations are written after it grouped by kind, in the order of the tree's members, and so are a line's own before its first move, so the order in which the document interleaved different kinds is not kept.",
       "A tag pair whose name a game repeats is written once, with the value the reader keeps, the first.",
       "A line escaped with a percent sign is not written, since the reader discards it.",
-      "A game with no tag, no movetext and no result, which the reader builds from a lone move number, is written as the move number 1."
+      "A game with no tag, no movetext and no result, which the reader builds from a lone move number, is written as the move number 1.",
+      "A game with no result that the reader would read the next game into, one with no move or one that a game with no tag follows, is written with the termination marker *, which the reader reads as its result."
     ]
   }
 }
@@ -95,28 +96,38 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ; a blank line between two games. The movetext is a game's own comments,
 ; glyphs and variations, its moves, and its result, separated by spaces
 ; and broken into lines of at most 79 characters where a token allows,
-; as PGN's export format asks; a token longer than that has a line of its
-; own, and a line ends after a rest-of-line comment. A move is its move
-; number indication, its san and its annotation, then its glyphs as \`$n\`,
-; its comments, \`{text}\` or \`;text\` and a line break, and its variations,
-; each in parentheses. A white move's number is always written, \`12.\`,
-; and a black move's, \`12...\`, except right after the white move of the
-; same number when that move has no comment and no variation, which is
-; where the reader's count gives it. A move without a number or a side
-; is written without an indication. An empty database is no text at all.
+; as PGN's export format asks (8.2.2.2); a token longer than that has a
+; line of its own, and a line ends after a rest-of-line comment. A move is
+; its move number indication, its san and its annotation, then its glyphs
+; as \`$n\`, its comments, \`{text}\` or \`;text\` and a line break, and its
+; variations, each in parentheses, which are tokens of their own (7): a
+; parenthesis is on the line it opens or closes when that line stays
+; within 79 characters, and on a line of its own otherwise. A white move's
+; number is always written, \`12.\`, and a black move's, \`12...\`, except
+; right after the white move of the same number when that move has no
+; comment and no variation, which is where the reader's count gives it. A
+; move without a number or a side is written without an indication. An
+; empty database is no text at all.
+;
+; A game without a result ends without a termination marker, as the
+; reader reads one, except where PGN would read the game after it as part
+; of it: the reader takes the tags that follow a game with no move and no
+; result into it, and the movetext that follows a game with no result, so
+; such a game is written with the marker \`*\`, PGN's for a game whose result
+; is not known (8.2.6), on a line of its own before the next game, and
+; reads back with that result. A game with no tag, no movetext and no
+; result is written as the move number \`1.\`, from which the reader builds
+; one. The manifest's loss lines say both.
 ;
 ; What PGN has no form for fails with TARGET_VALUE_UNREPRESENTABLE,
-; naming it: a root that is not an array of games; a game with no tag,
-; no movetext and no result; a game PGN would read as part of the one
-; before it (one after a game of tags alone, or a game with no tag after
-; one with no result); a variation with no move and no annotation; a tag
-; name that is not letters, digits and underscores, a tag value holding a
-; control character, a brace comment holding \`}\`, and a rest-of-line
-; comment holding a line break; and any member out of its place. A san,
-; an annotation and a number are written as they are: a tree the reader
-; could not have built is written as its members say, and need not read
-; back as itself. Events no tree has fail with PROTOCOL_ORDER_ERROR,
-; saying so.
+; naming it: a root that is not an array of games; a variation with no
+; move and no annotation; a tag name that is not letters, digits and
+; underscores, a tag value holding a control character, a brace comment
+; holding \`}\`, and a rest-of-line comment holding a line break; and any
+; member out of its place. A san, an annotation and a number are written
+; as they are: a tree the reader could not have built is written as its
+; members say, and need not read back as itself. Events no tree has fail
+; with PROTOCOL_ORDER_ERROR, saying so.
 ;
 ; The state is a vector of frames that grows with a game's nesting. A
 ; line's text is held until the line ends, since the annotations of its
@@ -126,9 +137,13 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ; ends. Tag pairs are written as they arrive. A text being built is
 ; \`[done current]\`: the finished lines, each ending in a line break, and
 ; the line being filled. The database is \`[:db previous]\`, where previous
-; says how the game before ended, which decides what may follow it. A
-; member being passed over is \`[:skip opens]\`, one marker in opens per
-; container open inside it. Once the database ends the state is
+; says how the game before ended, which decides what the next game writes
+; first: \`:none\` before the first game, \`:closed\` after a result,
+; \`:open-text\` after moves and no result, and \`[:open-all marker]\` after
+; no move and no result, with the marker that game is to end with; once a
+; game has written what parts it from the one before, its tags carry
+; \`:started\`. A member being passed over is \`[:skip opens]\`, one marker in
+; opens per container open inside it. Once the database ends the state is
 ; \`[:done]\`, and nothing may follow it.
 
 ; The top frame, or :none before the root.
@@ -170,11 +185,44 @@ def pgn-rest [a body]
   match (pgn-tok a (string-join "" [";" body]))
     case [d c] [(string-join "" [d c "\\n"]) ""]
 
-; A variation's text between parentheses.
+; A variation's text between parentheses: each on the line it opens or
+; closes when that line stays within 79 characters, and on a line of its
+; own otherwise, since a parenthesis is a token of its own.
 def pgn-paren [b]
   match b
-    case ["" c] ["" (string-join "" ["(" c ")"])]
-    case [d c] [(string-join "" ["(" d]) (string-join "" [c ")"])]
+    case ["" c] (pgn-paren-line c)
+    case [d c] (pgn-paren-close (pgn-paren-open d) c)
+
+; A variation of one line.
+def pgn-paren-line [c]
+  match [(pgn-fits c 2) (pgn-fits c 1)]
+    case [true _] ["" (string-join "" ["(" c ")"])]
+    case [false true] [(string-join "" ["(" c "\\n"]) ")"]
+    case _ [(string-join "" ["(\\n" c "\\n"]) ")"]
+
+; The opening parenthesis, before the first of the finished lines.
+def pgn-paren-open [d]
+  match (pgn-fits (get-path (path 0) (split "\\n" d)) 1)
+    case true (string-join "" ["(" d])
+    case false (string-join "" ["(\\n" d])
+
+; The closing parenthesis, after the line being filled.
+def pgn-paren-close [d c]
+  match [c (pgn-fits c 1)]
+    case ["" _] [d ")"]
+    case [_ true] [d (string-join "" [c ")"])]
+    case _ [(string-join "" [d c "\\n"]) ")"]
+
+; Whether a line keeps within 79 characters with n more.
+def pgn-fits [line n]
+  match (compare (length line) (pgn-room n))
+    case :greater false
+    case _ true
+
+def pgn-room [n]
+  match n
+    case 1 78
+    case 2 77
 
 ; A text written out: its lines, the last ended by a line break.
 def pgn-lines [b]
@@ -279,13 +327,23 @@ def pgn-skip-end [opens s]
     case 1 (transition (pop s) [])
     case _ (transition (pgn-mark [:skip (pop opens)] s) [])
 
-; A game begins: a blank line after the one before, unless PGN would read
-; it as part of that one.
+; A game begins. What parts it from the game before is written with its
+; first tag, or when its tags end if it has none.
 def pgn-game [prev s]
-  match prev
-    case :none (transition (push [:g-tags-key prev] s) [])
-    case :open-empty (fail :unrepresentable "the tree is not a PGN database: a game follows one of tags alone, which PGN reads as part of it")
-    case _ (transition (push [:g-tags-key prev] s) ["\\n"])
+  transition (push [:g-tags-key prev] s) []
+
+; What a game writes first: nothing before the first game, and otherwise
+; a blank line, after the termination marker \`*\` of a game before it with
+; no result that PGN would otherwise read this one as part of: one with no
+; move, which takes any game after it, and one with moves, which takes a
+; game with no tag. Once a game has written it, its tags go on \`:started\`.
+def pgn-gap [prev tagged]
+  match [prev tagged]
+    case [:none _] ""
+    case [:started _] ""
+    case [[:open-all marker] _] (string-join "" [marker "\\n"])
+    case [:open-text false] "*\\n\\n"
+    case _ "\\n"
 
 ; A tag pair, written as it arrives.
 def pgn-tag [prev name value s]
@@ -293,7 +351,7 @@ def pgn-tag [prev name value s]
     case :string
       match (chars-within [[32 1114111]] value)
         case true
-          transition (pgn-mark [:g-tag-name prev true] s) ["[" name " \\"" (pgn-tag-value value) "\\"]\\n"]
+          transition (pgn-mark [:g-tag-name :started true] s) [(pgn-gap prev true) "[" name " \\"" (pgn-tag-value value) "\\"]\\n"]
         case false (fail :unrepresentable "the tree is not a PGN database: a tag's value holds a control character, which PGN has no form for")
     case _ (pgn-misplaced s)
 
@@ -302,12 +360,10 @@ def pgn-tag-name [prev name s]
     case [:greater true] (transition (pgn-mark [:g-tag-value prev name] s) [])
     case _ (fail :unrepresentable "the tree is not a PGN database: a tag's name is not letters, digits and underscores")
 
-; The tags end: a game with no tag after one with no result would be read
-; as part of it.
+; The tags end, and a game with none writes what parts it from the one
+; before.
 def pgn-tags-end [prev any s]
-  match [prev any]
-    case [:open-text false] (fail :unrepresentable "the tree is not a PGN database: a game with no tag follows one with no result, which PGN reads as part of it")
-    case _ (transition (pgn-mark [:g-moves-key any] s) [])
+  transition (pgn-mark [:g-moves-key any] s) [(pgn-gap prev any)]
 
 ; A game ends: its movetext, the line annotations before the moves and
 ; the result after them, written after a blank line when it has tags; and
@@ -315,21 +371,27 @@ def pgn-tags-end [prev any s]
 def pgn-game-end [tags mbuf abuf result s]
   let [body (pgn-append abuf mbuf)]
     let [full (pgn-result body result)]
-      let [rest (pop s)]
+      let [db (pgn-mark [:db (pgn-ended tags mbuf body result)] (pop s))]
         match [full tags]
-          case [["" ""] false] (transition (pgn-mark [:db :open-empty] rest) ["1.\\n"])
-          case [["" ""] true] (transition (pgn-mark [:db :open-empty] rest) [])
-          case [_ true] (transition (pgn-mark [:db (pgn-ended body result)] rest) ["\\n" (pgn-lines full)])
-          case _ (transition (pgn-mark [:db (pgn-ended body result)] rest) [(pgn-lines full)])
+          case [["" ""] false] (transition db ["1.\\n"])
+          case [["" ""] true] (transition db [])
+          case [_ true] (transition db ["\\n" (pgn-lines full)])
+          case _ (transition db [(pgn-lines full)])
 
 def pgn-result [body result]
   match result
     case null body
     case _ (pgn-tok body result)
 
-def pgn-ended [body result]
-  match [body result]
-    case [_ null] :open-text
+; How a game ended, which the next game reads: with its result; with moves
+; and no result; or with no move and no result, so that the next game
+; writes the termination marker for it first, after a blank line when it
+; was tags alone, since its movetext begins there.
+def pgn-ended [tags mbuf body result]
+  match [result mbuf body tags]
+    case [null ["" ""] ["" ""] true] [:open-all "\\n*\\n"]
+    case [null ["" ""] _ _] [:open-all "*\\n"]
+    case [null _ _ _] :open-text
     case _ :closed
 
 def pgn-result-value [tags mbuf abuf value s]

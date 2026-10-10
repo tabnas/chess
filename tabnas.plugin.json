@@ -39,7 +39,8 @@
       "A move's glyphs, comments and variations are written after it grouped by kind, in the order of the tree's members, and so are a line's own before its first move, so the order in which the document interleaved different kinds is not kept.",
       "A tag pair whose name a game repeats is written once, with the value the reader keeps, the first.",
       "A line escaped with a percent sign is not written, since the reader discards it.",
-      "A game with no tag, no movetext and no result, which the reader builds from a lone move number, is written as the move number 1."
+      "A game with no tag, no movetext and no result, which the reader builds from a lone move number, is written as the move number 1.",
+      "A game with no result that the reader would read the next game into, one with no move or one that a game with no tag follows, is written with the termination marker *, which the reader reads as its result."
     ]
   }
 }

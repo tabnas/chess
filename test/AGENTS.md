@@ -43,6 +43,7 @@ the default makes it a whole database.
 | `strict.tsv` | Import format vs export format, each row twice | 3, 8.2.3.7 |
 | `errors.tsv` | Inputs that are not chess notation | — |
 | `realworld.tsv` | Whole games as they appear in the wild | — |
+| `render.tsv` | Documents the render (`alchemy/render.alc`) wrote, as alchemy ran it, and what the reader reads from them; a test beside each runner holds their lines to 79 characters | 7, 8.2.2.2, 8.2.5, 8.2.6 |
 
 ## Rules
 
