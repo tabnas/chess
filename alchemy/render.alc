@@ -1,0 +1,571 @@
+; PGN's render: a database of games, the tree the reader builds, written
+; back as PGN text. This is a library of definitions, each named
+; `pgn-...`, which a host links with its own program (alchemy's
+; `compile_sources`); its entry point is `pgn-render`, and nothing else
+; here is the host's to call.
+;
+; The profile writes the reader's own tree and no other, as the
+; translation design says a render of a format whose value has a shape of
+; its own does: the manifest names that shape `pgn-database`. Its root is
+; an array of games, and each object's members come in the order the
+; reader builds them in, which a walked value keeps:
+;
+;   game        tags, moves, then comments, nags and variations in any
+;               order, then result
+;   variation   moves, then comments, nags and variations in any order
+;   move        san, then piece, disambiguation, capture, to, promotion,
+;               castle and check in any order, annotation, number and
+;               side, then nags, comments and variations in any order
+;   comment     kind, text, then commands
+;
+; A move is written as its san with its annotation, and the fields the
+; reader takes from the san (piece, disambiguation, capture, to,
+; promotion, castle, check) and a comment's commands, which the reader
+; takes from its text, are read and not written, since a reader derives
+; them again. A comment, a glyph or a variation of a line rather than of
+; a move annotates the line's start, so it is written before the line's
+; first move, although it comes after the moves in the tree.
+;
+; The text: each game's tag pairs one per line, `[Name "value"]`, the
+; value's backslashes and quotes escaped; a blank line; the movetext; and
+; a blank line between two games. The movetext is a game's own comments,
+; glyphs and variations, its moves, and its result, separated by spaces
+; and broken into lines of at most 79 characters where a token allows,
+; as PGN's export format asks (8.2.2.2); a token longer than that has a
+; line of its own, and a line ends after a rest-of-line comment. A move is
+; its move number indication, its san and its annotation, then its glyphs
+; as `$n`, its comments, `{text}` or `;text` and a line break, and its
+; variations, each in parentheses, which are tokens of their own (7): a
+; parenthesis is on the line it opens or closes when that line stays
+; within 79 characters, and on a line of its own otherwise. A white move's
+; number is always written, `12.`, and a black move's, `12...`, except
+; right after the white move of the same number when that move has no
+; comment and no variation, which is where the reader's count gives it. A
+; move without a number or a side is written without an indication. An
+; empty database is no text at all.
+;
+; A game without a result ends without a termination marker, as the
+; reader reads one, except where PGN would read the game after it as part
+; of it: the reader takes the tags that follow a game with no move and no
+; result into it, and the movetext that follows a game with no result, so
+; such a game is written with the marker `*`, PGN's for a game whose result
+; is not known (8.2.6), on a line of its own before the next game, and
+; reads back with that result. A game with no tag, no movetext and no
+; result is written as the move number `1.`, from which the reader builds
+; one. The manifest's loss lines say both.
+;
+; What PGN has no form for fails with TARGET_VALUE_UNREPRESENTABLE,
+; naming it: a root that is not an array of games; a variation with no
+; move and no annotation; a tag name that is not letters, digits and
+; underscores, a tag value holding a control character, a brace comment
+; holding `}`, and a rest-of-line comment holding a line break; and any
+; member out of its place. A san, an annotation and a number are written
+; as they are: a tree the reader could not have built is written as its
+; members say, and need not read back as itself. Events no tree has fail
+; with PROTOCOL_ORDER_ERROR, saying so.
+;
+; The state is a vector of frames that grows with a game's nesting. A
+; line's text is held until the line ends, since the annotations of its
+; start come after its moves in the tree, so a game's movetext is held
+; until the game ends: the state grows with one game's length, never
+; with the number of games, and a game's text is written when the game
+; ends. Tag pairs are written as they arrive. A text being built is
+; `[done current]`: the finished lines, each ending in a line break, and
+; the line being filled. The database is `[:db previous]`, where previous
+; says how the game before ended, which decides what the next game writes
+; first: `:none` before the first game, `:closed` after a result,
+; `:open-text` after moves and no result, and `[:open-all marker]` after
+; no move and no result, with the marker that game is to end with; once a
+; game has written what parts it from the one before, its tags carry
+; `:started`. A member being passed over is `[:skip opens]`, one marker in
+; opens per container open inside it. Once the database ends the state is
+; `[:done]`, and nothing may follow it.
+
+; The top frame, or :none before the root.
+def pgn-top [s]
+  match (count s)
+    case 0 :none
+    case _ (top s)
+
+; The top frame replaced.
+def pgn-mark [frame s]
+  push frame (pop s)
+
+def pgn-empty []
+  ["" ""]
+
+; A token added to a text, on the current line when the line stays
+; within 79 characters, and on a new line otherwise.
+def pgn-tok [a t]
+  match a
+    case [d ""] [d t]
+    case [d c]
+      let [joined (string-join " " [c t])]
+        match (compare (length joined) 79)
+          case :greater [(string-join "" [d c "\n"]) t]
+          case _ [d joined]
+
+; A text added to another: one of a single line as a token, and one of
+; several lines from a new line.
+def pgn-append [a b]
+  match [a b]
+    case [_ ["" ""]] a
+    case [_ ["" c]] (pgn-tok a c)
+    case [["" ""] _] b
+    case [[d ""] [bd bc]] [(string-join "" [d bd]) bc]
+    case [[d c] [bd bc]] [(string-join "" [d c "\n" bd]) bc]
+
+; A rest-of-line comment, which ends its line.
+def pgn-rest [a body]
+  match (pgn-tok a (string-join "" [";" body]))
+    case [d c] [(string-join "" [d c "\n"]) ""]
+
+; A variation's text between parentheses: each on the line it opens or
+; closes when that line stays within 79 characters, and on a line of its
+; own otherwise, since a parenthesis is a token of its own.
+def pgn-paren [b]
+  match b
+    case ["" c] (pgn-paren-line c)
+    case [d c] (pgn-paren-close (pgn-paren-open d) c)
+
+; A variation of one line.
+def pgn-paren-line [c]
+  match [(pgn-fits c 2) (pgn-fits c 1)]
+    case [true _] ["" (string-join "" ["(" c ")"])]
+    case [false true] [(string-join "" ["(" c "\n"]) ")"]
+    case _ [(string-join "" ["(\n" c "\n"]) ")"]
+
+; The opening parenthesis, before the first of the finished lines.
+def pgn-paren-open [d]
+  match (pgn-fits (get-path (path 0) (split "\n" d)) 1)
+    case true (string-join "" ["(" d])
+    case false (string-join "" ["(\n" d])
+
+; The closing parenthesis, after the line being filled.
+def pgn-paren-close [d c]
+  match [c (pgn-fits c 1)]
+    case ["" _] [d ")"]
+    case [_ true] [d (string-join "" [c ")"])]
+    case _ [(string-join "" [d c "\n"]) ")"]
+
+; Whether a line keeps within 79 characters with n more.
+def pgn-fits [line n]
+  match (compare (length line) (pgn-room n))
+    case :greater false
+    case _ true
+
+def pgn-room [n]
+  match n
+    case 1 78
+    case 2 77
+
+; A text written out: its lines, the last ended by a line break.
+def pgn-lines [b]
+  match b
+    case [d ""] d
+    case [d c] (string-join "" [d c "\n"])
+
+def pgn-number [n]
+  scalar-text csv-options n
+
+; Whether a black move of number n follows, in its line, the white move
+; of the same number with no comment and no variation, so that the
+; reader's count gives it its number and side.
+def pgn-follows [last n]
+  match last
+    case [ln "w" false]
+      match (compare ln n)
+        case :equal true
+        case _ false
+    case _ false
+
+; Whether a move number can be written as an indication: one to nine
+; digits, as the reader reads one.
+def pgn-indicated [num]
+  match [(compare num 1) (compare num 999999999)]
+    case [:less _] false
+    case [:unordered _] false
+    case [_ :greater] false
+    case _ true
+
+; A move's first token: its move number indication, its san and its
+; annotation. A number an indication cannot hold is left to the count.
+def pgn-head [last san ann num side]
+  let [move (string-join "" [san ann])]
+    match [num side]
+      case [null _] move
+      case [_ null] move
+      case _ (pgn-indication last move num side)
+
+def pgn-indication [last move num side]
+  match [(pgn-indicated num) side]
+    case [false _] move
+    case [true "w"] (string-join "" [(pgn-number num) ". " move])
+    case _
+      match (pgn-follows last num)
+        case true move
+        case false (string-join "" [(pgn-number num) "... " move])
+
+; A tag pair's value between quotes, its backslashes and quotes escaped.
+def pgn-tag-value [value]
+  replace-text "\"" "\\\""
+    replace-text "\\" "\\\\" value
+
+def pgn-out-of-place []
+  fail :unrepresentable "the tree is not a PGN database: an object's members are not the ones the reader builds, in its order"
+
+; A value met where the tree's shape has no place for it.
+def pgn-misplaced [s]
+  match (pgn-top s)
+    case :none (fail :unrepresentable "the tree is not a PGN database: its root is not an array of games")
+    case [:db prev] (fail :unrepresentable "the tree is not a PGN database: it holds a value that is not a game")
+    case [:g-tags prev] (fail :unrepresentable "the tree is not a PGN database: a game's tags are not an object")
+    case [:g-tag-value prev name] (fail :unrepresentable "the tree is not a PGN database: a tag's value is not a string")
+    case [:g-moves tags] (fail :unrepresentable "the tree is not a PGN database: a game's moves are not an array")
+    case [:g-result tags mbuf abuf] (fail :unrepresentable "the tree is not a PGN database: a game's result is not 1-0, 0-1, 1/2-1/2 or *")
+    case [:l-moves] (fail :unrepresentable "the tree is not a PGN database: a variation's moves are not an array")
+    case [:open-list lk] (fail :unrepresentable "the tree is not a PGN database: a list of comments, glyphs or variations is not an array")
+    case [:moves buf last] (fail :unrepresentable "the tree is not a PGN database: a line's moves hold a value that is not a move")
+    case [:m-head :san last san ann num side] (fail :unrepresentable "the tree is not a PGN database: a move's san is not a string")
+    case [:m-head :ann last san ann num side] (fail :unrepresentable "the tree is not a PGN database: a move's annotation is not a string")
+    case [:m-head :num last san ann num side] (fail :unrepresentable "the tree is not a PGN database: a move's number is not a number")
+    case [:m-head :side last san ann num side] (fail :unrepresentable "the tree is not a PGN database: a move's side is not w or b")
+    case [:nags buf] (fail :unrepresentable "the tree is not a PGN database: a glyph is not a number")
+    case [:comments buf] (fail :unrepresentable "the tree is not a PGN database: a list of comments holds a value that is not a comment")
+    case [:variations buf] (fail :unrepresentable "the tree is not a PGN database: a list of variations holds a value that is not a variation")
+    case [:c :kind ckind body] (fail :unrepresentable "the tree is not a PGN database: a comment's kind is not brace or line")
+    case [:c :text ckind body] (fail :unrepresentable "the tree is not a PGN database: a comment's text is not a string")
+    case _ (fail :protocol-order "the events hold a value where a key is due, which a tree's never do")
+
+; A member read and not written: its value, of any shape, is passed over.
+def pgn-skip-member [s]
+  transition (push [:skip []] s) []
+
+def pgn-skip [opens event s]
+  match event
+    case object-start (transition (pgn-mark [:skip (push :open opens)] s) [])
+    case array-start (transition (pgn-mark [:skip (push :open opens)] s) [])
+    case object-end (pgn-skip-end opens s)
+    case array-end (pgn-skip-end opens s)
+    case (key name)
+      match (count opens)
+        case 0 (fail :protocol-order "the events hold a key where a value is due, which a tree's never do")
+        case _ (transition s [])
+    case (scalar value)
+      match (count opens)
+        case 0 (transition (pop s) [])
+        case _ (transition s [])
+
+def pgn-skip-end [opens s]
+  match (count opens)
+    case 0 (fail :protocol-order "the events end a container where a value is due, which a tree's never do")
+    case 1 (transition (pop s) [])
+    case _ (transition (pgn-mark [:skip (pop opens)] s) [])
+
+; A game begins. What parts it from the game before is written with its
+; first tag, or when its tags end if it has none.
+def pgn-game [prev s]
+  transition (push [:g-tags-key prev] s) []
+
+; What a game writes first: nothing before the first game, and otherwise
+; a blank line, after the termination marker `*` of a game before it with
+; no result that PGN would otherwise read this one as part of: one with no
+; move, which takes any game after it, and one with moves, which takes a
+; game with no tag. Once a game has written it, its tags go on `:started`.
+def pgn-gap [prev tagged]
+  match [prev tagged]
+    case [:none _] ""
+    case [:started _] ""
+    case [[:open-all marker] _] (string-join "" [marker "\n"])
+    case [:open-text false] "*\n\n"
+    case _ "\n"
+
+; A tag pair, written as it arrives.
+def pgn-tag [prev name value s]
+  match (kind value)
+    case :string
+      match (chars-within [[32 1114111]] value)
+        case true
+          transition (pgn-mark [:g-tag-name :started true] s) [(pgn-gap prev true) "[" name " \"" (pgn-tag-value value) "\"]\n"]
+        case false (fail :unrepresentable "the tree is not a PGN database: a tag's value holds a control character, which PGN has no form for")
+    case _ (pgn-misplaced s)
+
+def pgn-tag-name [prev name s]
+  match [(compare (length name) 0) (chars-within [[48 57] [65 90] [95 95] [97 122]] name)]
+    case [:greater true] (transition (pgn-mark [:g-tag-value prev name] s) [])
+    case _ (fail :unrepresentable "the tree is not a PGN database: a tag's name is not letters, digits and underscores")
+
+; The tags end, and a game with none writes what parts it from the one
+; before.
+def pgn-tags-end [prev any s]
+  transition (pgn-mark [:g-moves-key any] s) [(pgn-gap prev any)]
+
+; A game ends: its movetext, the line annotations before the moves and
+; the result after them, written after a blank line when it has tags; and
+; the database learns how it ended.
+def pgn-game-end [tags mbuf abuf result s]
+  let [body (pgn-append abuf mbuf)]
+    let [full (pgn-result body result)]
+      let [db (pgn-mark [:db (pgn-ended tags mbuf body result)] (pop s))]
+        match [full tags]
+          case [["" ""] false] (transition db ["1.\n"])
+          case [["" ""] true] (transition db [])
+          case [_ true] (transition db ["\n" (pgn-lines full)])
+          case _ (transition db [(pgn-lines full)])
+
+def pgn-result [body result]
+  match result
+    case null body
+    case _ (pgn-tok body result)
+
+; How a game ended, which the next game reads: with its result; with moves
+; and no result; or with no move and no result, so that the next game
+; writes the termination marker for it first, after a blank line when it
+; was tags alone, since its movetext begins there.
+def pgn-ended [tags mbuf body result]
+  match [result mbuf body tags]
+    case [null ["" ""] ["" ""] true] [:open-all "\n*\n"]
+    case [null ["" ""] _ _] [:open-all "*\n"]
+    case [null _ _ _] :open-text
+    case _ :closed
+
+def pgn-result-value [tags mbuf abuf value s]
+  match value
+    case "1-0" (transition (pgn-mark [:g-end tags mbuf abuf value] s) [])
+    case "0-1" (transition (pgn-mark [:g-end tags mbuf abuf value] s) [])
+    case "1/2-1/2" (transition (pgn-mark [:g-end tags mbuf abuf value] s) [])
+    case "*" (transition (pgn-mark [:g-end tags mbuf abuf value] s) [])
+    case _ (pgn-misplaced s)
+
+; A variation ends: its text in parentheses, the annotations of its start
+; before its moves.
+def pgn-variation-end [mbuf abuf s]
+  match (pgn-append abuf mbuf)
+    case ["" ""] (fail :unrepresentable "the tree is not a PGN database: a variation has no move and no annotation, which PGN has no form for")
+    case body (pgn-hand (pop s) (pgn-paren body) :variation)
+
+; A list of annotations begins, of a line's start or of a move.
+def pgn-list [name s]
+  match name
+    case "comments" (transition (push [:open-list :comments] s) [])
+    case "nags" (transition (push [:open-list :nags] s) [])
+    case "variations" (transition (push [:open-list :variations] s) [])
+    case _ (pgn-out-of-place)
+
+; A list, or a variation, has ended: its text goes to the frame below,
+; which is now the top of s.
+def pgn-hand [s body what]
+  match (pgn-top s)
+    case [:g-moves-open tags] (transition (pgn-mark [:g-after tags body (pgn-empty)] s) [])
+    case [:l-moves-open] (transition (pgn-mark [:l-after body (pgn-empty)] s) [])
+    case [:g-after tags mbuf abuf] (transition (pgn-mark [:g-after tags mbuf (pgn-append abuf body)] s) [])
+    case [:l-after mbuf abuf] (transition (pgn-mark [:l-after mbuf (pgn-append abuf body)] s) [])
+    case [:m-body mbuf num side annotated]
+      transition (pgn-mark [:m-body (pgn-append mbuf body) num side (pgn-annotated annotated what body)] s) []
+    case [:variations buf] (transition (pgn-mark [:variations (pgn-append buf body)] s) [])
+    case _ (fail :protocol-order "the events end an array that is not open, which a tree's never do")
+
+; Whether a move is annotated after a list: a comment or a variation
+; makes the next black move write its number.
+def pgn-annotated [annotated what body]
+  match [annotated what body]
+    case [true _ _] true
+    case [_ :nags _] false
+    case [_ _ ["" ""]] false
+    case _ true
+
+; A move's first token is due: its indication, its san and annotation.
+def pgn-head-text [last san ann num side]
+  pgn-tok (pgn-empty) (pgn-head last san ann num side)
+
+def pgn-body [last san ann num side]
+  [:m-body (pgn-head-text last san ann num side) num side false]
+
+; A move ends: its text goes to its line's moves, and the line learns it.
+def pgn-move-end [mbuf num side annotated s]
+  let [rest (pop s)]
+    match (pgn-top rest)
+      case [:moves buf last]
+        transition (pgn-mark [:moves (pgn-append buf mbuf) [num side annotated]] rest) []
+
+; A comment ends: braces around its text, or a semicolon before it and a
+; line break after it.
+def pgn-comment-end [ckind body s]
+  let [rest (pop s)]
+    match (pgn-top rest)
+      case [:comments buf]
+        match ckind
+          case "brace" (transition (pgn-mark [:comments (pgn-tok buf (string-join "" ["{" body "}"]))] rest) [])
+          case "line" (transition (pgn-mark [:comments (pgn-rest buf body)] rest) [])
+
+def pgn-comment-text [ckind body s]
+  match [(kind body) ckind]
+    case [:string "brace"]
+      match (chars-within [[0 124] [126 1114111]] body)
+        case true (transition (pgn-mark [:c :end ckind body] s) [])
+        case false (fail :unrepresentable "the tree is not a PGN database: a brace comment holds a closing brace, which PGN has no form for")
+    case [:string "line"]
+      match (chars-within [[0 9] [11 12] [14 1114111]] body)
+        case true (transition (pgn-mark [:c :end ckind body] s) [])
+        case false (fail :unrepresentable "the tree is not a PGN database: a rest-of-line comment holds a line break, which PGN has no form for")
+    case _ (pgn-misplaced s)
+
+def pgn-move-key [name last san ann num side s]
+  match name
+    case "piece" (pgn-skip-member s)
+    case "disambiguation" (pgn-skip-member s)
+    case "capture" (pgn-skip-member s)
+    case "to" (pgn-skip-member s)
+    case "promotion" (pgn-skip-member s)
+    case "castle" (pgn-skip-member s)
+    case "check" (pgn-skip-member s)
+    case "annotation" (transition (pgn-mark [:m-head :ann last san ann num side] s) [])
+    case "number" (transition (pgn-mark [:m-head :num last san ann num side] s) [])
+    case "side" (transition (pgn-mark [:m-head :side last san ann num side] s) [])
+    case "nags" (pgn-list name (pgn-mark (pgn-body last san ann num side) s))
+    case "comments" (pgn-list name (pgn-mark (pgn-body last san ann num side) s))
+    case "variations" (pgn-list name (pgn-mark (pgn-body last san ann num side) s))
+    case _ (pgn-out-of-place)
+
+def pgn-key [name s]
+  match (pgn-top s)
+    case [:g-tags-key prev]
+      match name
+        case "tags" (transition (pgn-mark [:g-tags prev] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a game's first member is not tags")
+    case [:g-tag-name prev any] (pgn-tag-name prev name s)
+    case [:g-moves-key tags]
+      match name
+        case "moves" (transition (pgn-mark [:g-moves tags] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a game's member after its tags is not moves")
+    case [:g-after tags mbuf abuf]
+      match name
+        case "result" (transition (pgn-mark [:g-result tags mbuf abuf] s) [])
+        case _ (pgn-list name s)
+    case [:g-end tags mbuf abuf result] (fail :unrepresentable "the tree is not a PGN database: a game holds a member after its result")
+    case [:l-moves-key]
+      match name
+        case "moves" (transition (pgn-mark [:l-moves] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a variation's first member is not moves")
+    case [:l-after mbuf abuf] (pgn-list name s)
+    case [:m-head :san-key last san ann num side]
+      match name
+        case "san" (transition (pgn-mark [:m-head :san last san ann num side] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a move's first member is not san")
+    case [:m-head :fields last san ann num side] (pgn-move-key name last san ann num side s)
+    case [:m-body mbuf num side annotated] (pgn-list name s)
+    case [:c :kind-key ckind body]
+      match name
+        case "kind" (transition (pgn-mark [:c :kind ckind body] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a comment's first member is not kind")
+    case [:c :text-key ckind body]
+      match name
+        case "text" (transition (pgn-mark [:c :text ckind body] s) [])
+        case _ (fail :unrepresentable "the tree is not a PGN database: a comment's member after its kind is not text")
+    case [:c :end ckind body]
+      match name
+        case "commands" (pgn-skip-member s)
+        case _ (fail :unrepresentable "the tree is not a PGN database: a comment holds a member after its text other than commands")
+    case _ (fail :protocol-order "the events hold a key where a value is due, which a tree's never do")
+
+def pgn-scalar [value s]
+  match (pgn-top s)
+    case [:g-tag-value prev name] (pgn-tag prev name value s)
+    case [:g-result tags mbuf abuf] (pgn-result-value tags mbuf abuf value s)
+    case [:m-head :san last san ann num side]
+      match (kind value)
+        case :string (transition (pgn-mark [:m-head :fields last value ann num side] s) [])
+        case _ (pgn-misplaced s)
+    case [:m-head :ann last san ann num side]
+      match (kind value)
+        case :string (transition (pgn-mark [:m-head :fields last san value num side] s) [])
+        case _ (pgn-misplaced s)
+    case [:m-head :num last san ann num side]
+      match (kind value)
+        case :number (transition (pgn-mark [:m-head :fields last san ann value side] s) [])
+        case _ (pgn-misplaced s)
+    case [:m-head :side last san ann num side]
+      match value
+        case "w" (transition (pgn-mark [:m-head :fields last san ann num value] s) [])
+        case "b" (transition (pgn-mark [:m-head :fields last san ann num value] s) [])
+        case _ (pgn-misplaced s)
+    case [:nags buf]
+      match (kind value)
+        case :number (transition (pgn-mark [:nags (pgn-tok buf (string-join "" ["$" (pgn-number value)]))] s) [])
+        case _ (pgn-misplaced s)
+    case [:c :kind ckind body]
+      match value
+        case "brace" (transition (pgn-mark [:c :text-key value body] s) [])
+        case "line" (transition (pgn-mark [:c :text-key value body] s) [])
+        case _ (pgn-misplaced s)
+    case [:c :text ckind body] (pgn-comment-text ckind value s)
+    case _ (pgn-misplaced s)
+
+def pgn-object [s]
+  match (pgn-top s)
+    case [:db prev] (pgn-game prev s)
+    case [:g-tags prev] (transition (pgn-mark [:g-tag-name prev false] s) [])
+    case [:moves buf last] (transition (push [:m-head :san-key last "" "" null null] s) [])
+    case [:comments buf] (transition (push [:c :kind-key "" ""] s) [])
+    case [:variations buf] (transition (push [:l-moves-key] s) [])
+    case _ (pgn-misplaced s)
+
+def pgn-array [s]
+  match (pgn-top s)
+    case :none (transition [[:db :none]] [])
+    case [:g-moves tags] (transition (push [:moves (pgn-empty) :none] (pgn-mark [:g-moves-open tags] s)) [])
+    case [:l-moves] (transition (push [:moves (pgn-empty) :none] (pgn-mark [:l-moves-open] s)) [])
+    case [:open-list lk] (transition (pgn-mark [lk (pgn-empty)] s) [])
+    case _ (pgn-misplaced s)
+
+def pgn-object-end [s]
+  match (pgn-top s)
+    case [:g-tag-name prev any] (pgn-tags-end prev any s)
+    case [:g-after tags mbuf abuf] (pgn-game-end tags mbuf abuf null s)
+    case [:g-end tags mbuf abuf result] (pgn-game-end tags mbuf abuf result s)
+    case [:l-after mbuf abuf] (pgn-variation-end mbuf abuf s)
+    case [:m-head :fields last san ann num side] (pgn-move-end (pgn-head-text last san ann num side) num side false s)
+    case [:m-body mbuf num side annotated] (pgn-move-end mbuf num side annotated s)
+    case [:c :end ckind body] (pgn-comment-end ckind body s)
+    case [:g-tags-key prev] (fail :unrepresentable "the tree is not a PGN database: a game has no tags")
+    case [:g-moves-key tags] (fail :unrepresentable "the tree is not a PGN database: a game has no moves")
+    case [:l-moves-key] (fail :unrepresentable "the tree is not a PGN database: a variation has no moves")
+    case [:m-head :san-key last san ann num side] (fail :unrepresentable "the tree is not a PGN database: a move has no san")
+    case [:c :kind-key ckind body] (fail :unrepresentable "the tree is not a PGN database: a comment has no kind")
+    case [:c :text-key ckind body] (fail :unrepresentable "the tree is not a PGN database: a comment has no text")
+    case _ (fail :protocol-order "the events end an object that is not open, which a tree's never do")
+
+def pgn-array-end [s]
+  match (pgn-top s)
+    case [:db prev] (transition [:done] [])
+    case [:moves buf last] (pgn-hand (pop s) buf :moves)
+    case [:comments buf] (pgn-hand (pop s) buf :comments)
+    case [:nags buf] (pgn-hand (pop s) buf :nags)
+    case [:variations buf] (pgn-hand (pop s) buf :variations)
+    case _ (fail :protocol-order "the events end an array that is not open, which a tree's never do")
+
+def pgn-event [s event]
+  match event
+    case object-start (pgn-object s)
+    case array-start (pgn-array s)
+    case (key name) (pgn-key name s)
+    case (scalar value) (pgn-scalar value s)
+    case object-end (pgn-object-end s)
+    case array-end (pgn-array-end s)
+
+def pgn-step [s event]
+  match (pgn-top s)
+    case :done (fail :protocol-order "the events hold more after the database, which a tree's never do")
+    case [:skip opens] (pgn-skip opens event s)
+    case _ (pgn-event s event)
+
+def pgn-finish [s]
+  match (pgn-top s)
+    case :done []
+    case :none (fail :protocol-order "the events hold no value, where a tree's hold one")
+    case _ (fail :protocol-order "the events ended inside a container, which a tree's never do")
+
+; The render: the database's events in, its text out.
+def pgn-render [input]
+  join ""
+    scan-emit [] pgn-step pgn-finish (events input)

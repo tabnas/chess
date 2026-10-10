@@ -760,3 +760,56 @@ pub fn to_json(value: &Value) -> serde_json::Value {
 pub fn annotation_nag(suffix: &str) -> Option<u32> {
     Annotation::from_suffix(suffix).map(Annotation::nag)
 }
+
+/// One alchemy translation source and the entry point a host calls in it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TranslationPart {
+    /// The definition a host calls after linking the source.
+    pub entry: &'static str,
+    /// The source text, or `None` for an entry supplied by alchemy.
+    pub source: Option<&'static str>,
+}
+
+/// The package-local structural translation interface: the manifest and
+/// the alchemy sources a host composes a translation from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TranslationParts {
+    /// The complete `tabnas.plugin.json` text.
+    pub manifest: &'static str,
+    /// An optional lift from the grammar's events to its first read shape.
+    pub lift: Option<TranslationPart>,
+    /// An optional embedding of a plain tree in the format's schema, with its reverse.
+    pub embed: Option<TranslationPart>,
+    /// An optional render from the write shape to text.
+    pub render: Option<TranslationPart>,
+}
+
+const TRANSLATION: TranslationParts = TranslationParts {
+    manifest: include_str!("../translate/manifest.json"),
+    lift: None,
+    embed: None,
+    render: Some(TranslationPart {
+        entry: "pgn-render",
+        source: Some(include_str!("../translate/render.alc")),
+    }),
+};
+
+/// PGN's translation parts. The manifest's `translate` object says that
+/// PGN is read as and written from a tree of its own shape, the reader's
+/// database of games (the schema `pgn-database`, whose root is an array),
+/// and the render, `pgn-render`, writes that tree back as PGN text. There
+/// is no embed: a host composes a translation into PGN only from PGN itself
+/// or from a program that builds the tree. The texts are the crate's
+/// copies in `translate/` of `tabnas.plugin.json` and `alchemy/render.alc`,
+/// which `npm run embed` in `ts/` writes and `tests/translate_test.rs`
+/// holds to the files.
+///
+/// ```
+/// let parts = tabnas_chess::translate().expect("PGN carries translation parts");
+/// assert_eq!(parts.render.map(|part| part.entry), Some("pgn-render"));
+/// assert!(parts.embed.is_none());
+/// ```
+#[must_use]
+pub const fn translate() -> Option<TranslationParts> {
+    Some(TRANSLATION)
+}

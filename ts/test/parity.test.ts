@@ -109,3 +109,18 @@ function runSpec(file: string) {
 for (const file of readdirSync(specDir).sort()) {
   if (file.endsWith('.tsv')) runSpec(file)
 }
+
+// render.tsv pins documents the render (alchemy/render.alc) wrote, as
+// alchemy ran it. PGN's export format keeps a line under 80 characters
+// (8.2.2.2), and the render keeps every line within 79, the parentheses
+// of its variations included, so this holds those documents to it.
+test('render.tsv: every line the render wrote is at most 79 characters', () => {
+  const rows = loadSpec('render.tsv')
+  assert.ok(0 < rows.length, 'render.tsv: no cases')
+  for (const row of rows) {
+    for (const line of row.input.split('\n')) {
+      const width = [...line].length
+      assert.ok(width <= 79, `render.tsv:${row.line}: ${width} characters: ${line}`)
+    }
+  }
+})

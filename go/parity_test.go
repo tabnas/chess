@@ -196,3 +196,22 @@ func TestSpec(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderLineWidth holds the documents render.tsv pins, which the
+// render (alchemy/render.alc) wrote as alchemy ran it, to lines of at most
+// 79 characters: PGN's export format keeps a line under 80 (8.2.2.2), and
+// the render keeps every line within 79, the parentheses of its
+// variations included.
+func TestRenderLineWidth(t *testing.T) {
+	rows := loadSpec(t, "render.tsv")
+	if 0 == len(rows) {
+		t.Fatal("render.tsv: no cases")
+	}
+	for _, row := range rows {
+		for _, line := range strings.Split(row.input, "\n") {
+			if width := len([]rune(line)); 79 < width {
+				t.Errorf("render.tsv:%d: %d characters: %s", row.line, width, line)
+			}
+		}
+	}
+}
