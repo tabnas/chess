@@ -41,6 +41,7 @@
       "A line escaped with a percent sign is not written, since the reader discards it.",
       "A game with no tag, no movetext and no result, which the reader builds from a lone move number, is written as the move number 1.",
       "A game with no result that the reader would read the next game into, one with no move or one that a game with no tag follows, is written with the termination marker *, which the reader reads as its result."
-    ]
+    ],
+    "whole": "A move's annotations, comments and variations follow it in the text, and a game's result follows its moves, so a game's tree is complete only at the game's end: a document is read whole before anything is written."
   }
 }
