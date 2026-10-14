@@ -181,11 +181,24 @@ an inferred field would make the parser a chess engine, and a bad one.
   on the `tn.token` call order alone, since the engine sorts
   `options.match_tokens` by tin. Keep every one of them.
 
-- **Rules without a node inherit the enclosing one.** `movetext`, `element`,
-  `tag` and `tagbody` have no node of their own, so `r.node` in their
-  actions is the game or the variation. That is what makes a variation and
-  a game the same shape. `@movetext-bo` allocates one only when `movetext`
-  is the start rule and so has no parent.
+- **A line is built on a stack, not in a node.** A "line" is a game or a
+  variation, the same shape. The lines being built live in the parse's
+  context (`ctx.u` / `ctx.U` / `context.u`, under `chess:lines`),
+  innermost last: a game of a database pushes itself there, `@rav-bo` a
+  variation, and `tag`, `tagbody`, `movetext` and `element` write into
+  the line on top. `@element-bc` pops a variation onto the move it
+  follows, and `@gameitem-bc` pops a finished game into the database. So
+  the database, `pgn`'s node, is the only container in the parse tree,
+  every other rule inherits it, and a game joins it only once the game
+  is complete. That is what lets a streaming host (tabnas-transduce's
+  rule-event adapter, which streams a rule's container as its rules
+  close and walks one that arrives complete) read a database a game at
+  a time. Never give `game`, `rav` or any rule inside them a node of its
+  own: the adapter would start streaming it before its annotations and
+  result arrive. `rs/tests/stream_test.rs`, `ts/test/stream.test.ts` and
+  `go/stream_test.go` hold all three ports to it. A `game` or `movetext`
+  that is the start rule has no database to join: the line it builds is
+  its node, which the actions write into whenever the stack is empty.
 
 - **Move numbering lives on the node, invisibly.** The running
   `{number, side}` counter hangs off the line — under a `Symbol.for` key
@@ -687,11 +700,12 @@ shared fixtures pin. Four things differ because the languages do:
 
 - **The node is a `Value`, and nodes are shared cells.** Every rule gets
   its node as an `Rc<RefCell<Value>>`, and a rule that inherits one gets
-  the SAME cell — which is what `movetext` and `element` writing into the
-  enclosing line relies on. A rule that needs a node of its own (`pgn`,
-  `game`, `rav`, and `movetext` as a start rule) REPLACES the cell —
+  the SAME cell. A rule that needs a node of its own (`pgn`, and `game`
+  or `movetext` as a start rule) REPLACES the cell —
   `rule.node = Rc::new(RefCell::new(…))` — rather than writing through
-  it. Write through it and you overwrite the parent's node.
+  it. Write through it and you overwrite the parent's node. The lines of
+  a database are `Value`s on the stack in `context.u`, written in place
+  through `with_line`.
 
 - **The counter lives in `MapRef::meta`.** Neither `Serialize` nor
   `to_json` emits that map, so it is the Rust spelling of the
