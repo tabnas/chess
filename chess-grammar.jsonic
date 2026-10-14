@@ -50,10 +50,14 @@
 # NODE MODEL
 #
 # A "line" is a game or a variation: an object with `moves`, and optionally
-# the `comments`/`nags` that precede its first move. `game` and `rav` each
-# allocate one; `movetext` and `element` have no node of their own, so they
-# inherit the enclosing line and append to it directly. That is what makes a
-# variation and a game the same shape.
+# the `comments`/`nags` that precede its first move. That is what makes a
+# variation and a game the same shape. The lines being built live on a
+# stack in the parse's context, not in rule nodes: `game` and `rav` each
+# push one, `movetext` and `element` write into the line on top, and a
+# finished game leaves the stack for the database, `pgn`'s node and the
+# only container in the parse tree, so a host can stream a database a game
+# at a time. A `game` or `movetext` that is the start rule makes its line
+# its node instead.
 #
 # The grammar is applied with { rule: { alt: { g: 'chess' } } } so every
 # alt below is automatically tagged with the 'chess' group.
@@ -112,7 +116,7 @@
     { s: '#CS' b: 1 g: 'tag,end' }
   ]
 
-  # An element sequence. No node of its own: it writes into the line.
+  # An element sequence. It writes into the line on top of the stack.
   rule: movetext: open: [
     { s: '#ELEM' p: element b: 1 g: 'movetext,elem' }
   ]

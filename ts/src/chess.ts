@@ -719,12 +719,51 @@ function startOf(line: Line): Count {
   return count
 }
 
-function lineOf(rule: Rule): Line {
-  return rule.node as Line
+// Where a line is built. A "line" is a game or a variation, and the two
+// are the same shape. The lines being built live in the parse's context,
+// innermost last, under LINES: a game of a database pushes itself there,
+// `rav` a variation, and `tag`, `tagbody`, `movetext` and `element`
+// write into the line on top. A variation leaves the stack when the
+// `element` that opened it closes, and joins the move it follows; a game
+// leaves it when its `gameitem` closes, and joins the database whole.
+//
+// So the database is the only container in the parse tree: `pgn` makes
+// it its node, every other rule inherits it, and nothing but a finished
+// game is ever stored in it. A streaming host follows a parse through its
+// rule nodes (tabnas-transduce's rule-event adapter streams a container
+// that is a node as its rules close, and walks one that arrives
+// complete), so a database streams a game at a time, and a game never
+// leaves before its last annotation and its result have joined it. It
+// cannot leave sooner, since a move's annotations, comments and
+// variations follow the move (PGN spec 8.2.3.8, 5, 8.2.5).
+//
+// A `game` or `movetext` that is the start rule has no database to join:
+// the line it builds is its node, which `lineOf` falls back to when the
+// stack is empty.
+const LINES = 'chess:lines'
+
+function lines(ctx: Context): Line[] {
+  let stack = ctx.u[LINES]
+  if (!Array.isArray(stack)) {
+    stack = ctx.u[LINES] = []
+  }
+  return stack
 }
 
-function annotate(rule: Rule, field: 'nags' | 'comments', value: any): void {
-  const line = lineOf(rule)
+// The line being built: the innermost on the stack, or, when the stack is
+// empty, the rule's node, which is a line when `game` or `movetext` is the
+// start rule. The database is never one.
+function lineOf(rule: Rule, ctx: Context): Line | undefined {
+  const stack = lines(ctx)
+  if (0 < stack.length) return stack[stack.length - 1]
+  const node = rule.node
+  return null != node && 'object' === typeof node && !Array.isArray(node)
+    ? (node as Line)
+    : undefined
+}
+
+function annotate(line: Line | undefined, field: 'nags' | 'comments', value: any): void {
+  if (null == line) return
   const target: any = 0 < line.moves.length ? line.moves[line.moves.length - 1] : line
     ; (target[field] = target[field] || []).push(value)
 }
@@ -744,27 +783,34 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       r.node = [] as Database
     },
 
-    '@gameitem-bc': (r: Rule) => {
-      if (null != r.child.node) (r.node as Database).push(r.child.node)
+    // The game is complete: it leaves the stack and joins the database.
+    '@gameitem-bc': (r: Rule, ctx: Context) => {
+      const game = lines(ctx).pop()
+      if (null != game) (r.node as Database).push(game as Game)
     },
 
-    '@game-bo': (r: Rule) => {
+    // A game of a database is built on the stack. As the start rule it has
+    // no database to join, and is its own node.
+    '@game-bo': (r: Rule, ctx: Context) => {
       // A null-prototype tag map. PGN spec 8.1 allows any name of letters,
       // digits and underscore, which includes `__proto__` — and on an
       // ordinary object that assignment sets the prototype instead of a
       // property, so the tag would vanish from the parse result.
-      r.node = { tags: Object.create(null), moves: [] } as Game
+      const game = { tags: Object.create(null), moves: [] } as Game
+      if (null == r.node) r.node = game
+      else lines(ctx).push(game)
     },
 
-    // `movetext` normally inherits the enclosing line and writes into it.
-    // As a start rule it has no parent, so it allocates one.
+    // `movetext` normally writes into the line it is in. As a start rule it
+    // has no line, so it makes one its node.
     '@movetext-bo': (r: Rule) => {
       if (null == r.node) r.node = { moves: [] } as Line
     },
 
-    '@tag': (r: Rule) => {
-      // `r.node` is the game: `tag` and `tagbody` have no node of their own.
-      const game = r.node as Game
+    '@tag': (r: Rule, ctx: Context) => {
+      // The line is the game: `tag` and `tagbody` write into it.
+      const game = lineOf(r, ctx) as Game | undefined
+      if (null == game) return
       const name = r.o0.src
       // PGN spec 8.1: a tag name should not repeat; the first wins, as a
       // reader has no better rule for choosing between them.
@@ -773,28 +819,34 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       }
     },
 
-    '@result-open': (r: Rule) => {
-      ; (r.node as Game).result = r.o0.src as GameResult
+    '@result-open': (r: Rule, ctx: Context) => {
+      const game = lineOf(r, ctx) as Game | undefined
+      if (null != game) game.result = r.o0.src as GameResult
     },
 
-    '@result-close': (r: Rule) => {
-      ; (r.node as Game).result = r.c0.src as GameResult
+    '@result-close': (r: Rule, ctx: Context) => {
+      const game = lineOf(r, ctx) as Game | undefined
+      if (null != game) game.result = r.c0.src as GameResult
     },
 
     // A `[` after the movetext has started belongs to the next game, not
     // to this one's tag section.
-    '@more-tags': (r: Rule) => {
-      const game = r.node as Game
-      return 0 === game.moves.length && null == game.result
+    '@more-tags': (r: Rule, ctx: Context) => {
+      const game = lineOf(r, ctx) as Game | undefined
+      return null == game || (0 === game.moves.length && null == game.result)
     },
 
     // PGN spec 8.2.6: the termination marker is the last element of a
     // movetext section, so movetext after one belongs to the next game.
     // This is what lets `*1. e4 *` be two games.
-    '@no-result': (r: Rule) => null == (r.node as Game).result,
+    '@no-result': (r: Rule, ctx: Context) => {
+      const game = lineOf(r, ctx) as Game | undefined
+      return null == game || null == game.result
+    },
 
     '@move': (r: Rule, ctx: Context) => {
-      const line = lineOf(r)
+      const line = lineOf(r, ctx)
+      if (null == line) return
       const count = counter(line)
       const move = decompose(san, r.o0, ctx)
       move.number = count.number
@@ -816,8 +868,10 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
     // follows. Import format allows any number of periods, but three or
     // more is the export-format spelling for "Black to move", so it is
     // worth honouring where it appears.
-    '@number': (r: Rule) => {
-      const count = counter(lineOf(r))
+    '@number': (r: Rule, ctx: Context) => {
+      const line = lineOf(r, ctx)
+      if (null == line) return
+      const count = counter(line)
       const src = r.o0.src
       count.number = parseInt(src, 10)
       const dots = src.length - src.replace(/\./g, '').length
@@ -825,39 +879,44 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       else if (1 < dots) count.side = 'b'
     },
 
-    '@nag': (r: Rule) => {
-      annotate(r, 'nags', parseInt(r.o0.src.substring(1), 10))
+    '@nag': (r: Rule, ctx: Context) => {
+      annotate(lineOf(r, ctx), 'nags', parseInt(r.o0.src.substring(1), 10))
     },
 
-    '@brace-comment': (r: Rule) => {
-      annotate(r, 'comments', makeComment('brace', r.o0.val, commands))
+    '@brace-comment': (r: Rule, ctx: Context) => {
+      annotate(lineOf(r, ctx), 'comments', makeComment('brace', r.o0.val, commands))
     },
 
-    '@line-comment': (r: Rule) => {
-      annotate(r, 'comments', makeComment('line', r.o0.val, commands))
+    '@line-comment': (r: Rule, ctx: Context) => {
+      annotate(lineOf(r, ctx), 'comments', makeComment('line', r.o0.val, commands))
     },
 
     // A variation replaces the move it follows, so it starts on that
-    // move's number and side, not on the next one.
-    '@rav-bo': (r: Rule) => {
-      const parent = lineOf(r.parent)
-      const previous = parent.moves[parent.moves.length - 1]
+    // move's number and side, not on the next one. It is built on the
+    // stack, above the line it is in.
+    '@rav-bo': (r: Rule, ctx: Context) => {
+      const parent = lineOf(r, ctx)
+      const previous = null == parent ? undefined : parent.moves[parent.moves.length - 1]
       const line: Line = { moves: [] }
       const count: Count =
-        null == previous
-          ? { ...counter(parent) }
-          : { number: previous.number as number, side: previous.side as Side }
+        null != previous
+          ? { number: previous.number as number, side: previous.side as Side }
+          : null != parent
+            ? { ...counter(parent) }
+            : { number: 1, side: 'w' }
       Object.defineProperty(line, COUNT, { value: count, writable: true })
-      r.node = line
+      lines(ctx).push(line)
     },
 
-    '@element-bc': (r: Rule) => {
+    // The variation is complete: it leaves the stack and joins the move it
+    // follows, or, when it follows no move, the line's starting position.
+    '@element-bc': (r: Rule, ctx: Context) => {
       if (true !== r.u.rav) return
-      const line = lineOf(r)
-      // A variation replaces the move it follows; one that follows no move
-      // annotates the line's starting position instead.
+      const variation = lines(ctx).pop()
+      const line = lineOf(r, ctx)
+      if (null == variation || null == line) return
       const target: { variations?: Line[] } = line.moves[line.moves.length - 1] || line
-        ; (target.variations = target.variations || []).push(r.child.node as Line)
+        ; (target.variations = target.variations || []).push(variation)
     },
   } as Record<FuncRef, Function>
 }

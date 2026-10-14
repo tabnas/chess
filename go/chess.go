@@ -899,8 +899,70 @@ type count struct {
 	side   string
 }
 
-func lineOf(r *tabnas.Rule) *Line {
+// Where a line is built. A "line" is a game or a variation, and the two
+// are the same shape. The lines being built live in the parse's context,
+// innermost last, under linesKey: a game of a database pushes itself
+// there, `rav` a variation, and `tag`, `tagbody`, `movetext` and
+// `element` write into the line on top. A variation leaves the stack when
+// the `element` that opened it closes, and joins the move it follows; a
+// game leaves it when its `gameitem` closes, and joins the database
+// whole.
+//
+// So the database is the only node in the parse tree that holds games:
+// `pgn` makes it its node, every other rule inherits it, and nothing but
+// a finished game is ever stored in it, which is what lets a streaming
+// host send a database a game at a time (see the TypeScript plugin). A
+// game cannot leave sooner, since a move's annotations, comments and
+// variations follow the move (PGN spec 8.2.3.8, 5, 8.2.5).
+//
+// A `game` or `movetext` that is the start rule has no database to join:
+// the line it builds is its node, which current falls back to when the
+// stack is empty.
+const linesKey = "chess:lines"
+
+// lineStack is the lines being built, innermost last.
+type lineStack struct{ lines []liner }
+
+func stackOf(ctx *tabnas.Context) *lineStack {
+	if nil == ctx.U {
+		ctx.U = map[string]any{}
+	}
+	s, ok := ctx.U[linesKey].(*lineStack)
+	if !ok {
+		s = &lineStack{}
+		ctx.U[linesKey] = s
+	}
+	return s
+}
+
+func (s *lineStack) push(l liner) { s.lines = append(s.lines, l) }
+
+func (s *lineStack) pop() liner {
+	if 0 == len(s.lines) {
+		return nil
+	}
+	l := s.lines[len(s.lines)-1]
+	s.lines[len(s.lines)-1] = nil
+	s.lines = s.lines[:len(s.lines)-1]
+	return l
+}
+
+// current is the line being built: the innermost on the stack, or, when
+// the stack is empty, the rule's node, which is a line when `game` or
+// `movetext` is the start rule. The database is never one.
+func current(r *tabnas.Rule, ctx *tabnas.Context) liner {
+	s := stackOf(ctx)
+	if 0 < len(s.lines) {
+		return s.lines[len(s.lines)-1]
+	}
 	if lh, ok := r.Node.(liner); ok {
+		return lh
+	}
+	return nil
+}
+
+func lineOf(r *tabnas.Rule, ctx *tabnas.Context) *Line {
+	if lh := current(r, ctx); nil != lh {
 		return lh.line()
 	}
 	return nil
@@ -937,8 +999,7 @@ func counter(node any) *count {
 	return c
 }
 
-func annotateComment(r *tabnas.Rule, c *Comment) {
-	l := lineOf(r)
+func annotateComment(l *Line, c *Comment) {
 	if nil == l {
 		return
 	}
@@ -950,8 +1011,7 @@ func annotateComment(r *tabnas.Rule, c *Comment) {
 	l.Comments = append(l.Comments, c)
 }
 
-func annotateNag(r *tabnas.Rule, n int) {
-	l := lineOf(r)
+func annotateNag(l *Line, n int) {
 	if nil == l {
 		return
 	}
@@ -989,8 +1049,9 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 			r.Node = &Database{}
 		}),
 
-		"@gameitem-bc": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			g, ok := r.Child.Node.(*Game)
+		// The game is complete: it leaves the stack and joins the database.
+		"@gameitem-bc": tabnas.StateAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			g, ok := stackOf(ctx).pop().(*Game)
 			if !ok || nil == g {
 				return
 			}
@@ -999,20 +1060,28 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 			}
 		}),
 
-		"@game-bo": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			r.Node = &Game{Tags: map[string]string{}, Line: Line{Moves: []*Move{}}}
+		// A game of a database is built on the stack. As the start rule it
+		// has no database to join, and is its own node.
+		"@game-bo": tabnas.StateAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			g := &Game{Tags: map[string]string{}, Line: Line{Moves: []*Move{}}}
+			if nil == r.Node {
+				r.Node = g
+			} else {
+				stackOf(ctx).push(g)
+			}
 		}),
 
-		// `movetext` normally inherits the enclosing line and writes into
-		// it. As a start rule it has no parent, so it allocates one.
+		// `movetext` normally writes into the line it is in. As a start
+		// rule it has no line, so it makes one its node.
 		"@movetext-bo": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
 			if nil == r.Node {
 				r.Node = &Line{Moves: []*Move{}}
 			}
 		}),
 
-		"@tag": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			g, ok := r.Node.(*Game)
+		// The line is the game: `tag` and `tagbody` write into it.
+		"@tag": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			g, ok := current(r, ctx).(*Game)
 			if !ok {
 				return
 			}
@@ -1024,22 +1093,22 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 			}
 		}),
 
-		"@result-open": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			if g, ok := r.Node.(*Game); ok {
+		"@result-open": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			if g, ok := current(r, ctx).(*Game); ok {
 				g.Result = r.O0.Src
 			}
 		}),
 
-		"@result-close": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			if g, ok := r.Node.(*Game); ok {
+		"@result-close": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			if g, ok := current(r, ctx).(*Game); ok {
 				g.Result = r.C0.Src
 			}
 		}),
 
 		// A `[` after the movetext has started belongs to the next game,
 		// not to this one's tag section.
-		"@more-tags": tabnas.AltCond(func(r *tabnas.Rule, _ *tabnas.Context) bool {
-			g, ok := r.Node.(*Game)
+		"@more-tags": tabnas.AltCond(func(r *tabnas.Rule, ctx *tabnas.Context) bool {
+			g, ok := current(r, ctx).(*Game)
 			if !ok {
 				return true
 			}
@@ -1049,17 +1118,18 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 		// PGN spec 8.2.6: the termination marker is the last element of a
 		// movetext section, so movetext after one belongs to the next game.
 		// This is what lets `*1. e4 *` be two games.
-		"@no-result": tabnas.AltCond(func(r *tabnas.Rule, _ *tabnas.Context) bool {
-			g, ok := r.Node.(*Game)
+		"@no-result": tabnas.AltCond(func(r *tabnas.Rule, ctx *tabnas.Context) bool {
+			g, ok := current(r, ctx).(*Game)
 			return !ok || "" == g.Result
 		}),
 
-		"@move": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			l := lineOf(r)
-			if nil == l {
+		"@move": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			lh := current(r, ctx)
+			if nil == lh {
 				return
 			}
-			c := counter(r.Node)
+			l := lh.line()
+			c := counter(lh)
 			move := decompose(san, r.O0.Src)
 			move.Number = c.number
 			move.Side = c.side
@@ -1080,8 +1150,8 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 		// that follows. Import format allows any number of periods, but
 		// three or more is the export-format spelling for "Black to move",
 		// so it is worth honouring where it appears.
-		"@number": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			c := counter(r.Node)
+		"@number": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			c := counter(current(r, ctx))
 			src := r.O0.Src
 			digits := 0
 			for digits < len(src) && '0' <= src[digits] && src[digits] <= '9' {
@@ -1096,42 +1166,46 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 			}
 		}),
 
-		"@nag": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			annotateNag(r, atoi(r.O0.Src[1:]))
+		"@nag": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			annotateNag(lineOf(r, ctx), atoi(r.O0.Src[1:]))
 		}),
 
-		"@brace-comment": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			annotateComment(r, makeComment("brace", fmt.Sprint(r.O0.Val), commands))
+		"@brace-comment": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			annotateComment(lineOf(r, ctx), makeComment("brace", fmt.Sprint(r.O0.Val), commands))
 		}),
 
-		"@line-comment": tabnas.AltAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			annotateComment(r, makeComment("line", fmt.Sprint(r.O0.Val), commands))
+		"@line-comment": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
+			annotateComment(lineOf(r, ctx), makeComment("line", fmt.Sprint(r.O0.Val), commands))
 		}),
 
 		// A variation replaces the move it follows, so it starts on that
-		// move's number and side, not on the next one.
-		"@rav-bo": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
+		// move's number and side, not on the next one. It is built on the
+		// stack, above the line it is in.
+		"@rav-bo": tabnas.StateAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
 			line := &Line{Moves: []*Move{}}
-			parent := lineOf(r.Parent)
-			if nil != parent && 0 < len(parent.Moves) {
-				prev := parent.Moves[len(parent.Moves)-1]
+			parent := current(r, ctx)
+			if nil != parent && 0 < len(parent.line().Moves) {
+				moves := parent.line().Moves
+				prev := moves[len(moves)-1]
 				line.count = &count{number: prev.Number, side: prev.Side}
 			} else {
-				c := counter(r.Parent.Node)
+				c := counter(parent)
 				line.count = &count{number: c.number, side: c.side}
 			}
-			r.Node = line
+			stackOf(ctx).push(line)
 		}),
 
-		"@element-bc": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
+		// The variation is complete: it leaves the stack and joins the move
+		// it follows.
+		"@element-bc": tabnas.StateAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
 			if true != r.U["rav"] {
 				return
 			}
-			variation, ok := r.Child.Node.(*Line)
+			variation, ok := stackOf(ctx).pop().(*Line)
 			if !ok {
 				return
 			}
-			l := lineOf(r)
+			l := lineOf(r, ctx)
 			if nil == l {
 				return
 			}

@@ -5,16 +5,29 @@
 //! The grammar carries `@ref` strings and no functions, so it stays
 //! shippable as data; the plugin binds these before installing it.
 //!
-//! # The node model in Rust
+//! # Where a line is built
 //!
-//! A "line" is a game or a variation, and the two are the same shape:
-//! `movetext` and `element` have no node of their own, so they inherit
-//! the enclosing line and write into it. The engine gives every rule its
-//! node as a shared `Rc<RefCell<Value>>`, so an inherited node is the
-//! SAME cell — writing through it is what TypeScript gets from object
-//! references. A rule that needs a node of its own (`pgn`, `game`, `rav`,
-//! and `movetext` when it is the start rule) REPLACES the cell rather
-//! than writing through it, or it would overwrite its parent's node.
+//! A "line" is a game or a variation, and the two are the same shape.
+//! The lines being built live in the parse's context, innermost last, in
+//! `u["chess:lines"]`: a game of a database pushes itself there, `rav` a
+//! variation, and `tag`, `tagbody`, `movetext` and `element` write into
+//! the line on top. A variation leaves the stack when the `element` that
+//! opened it closes, and joins the move it follows; a game leaves it when
+//! its `gameitem` closes, and joins the database whole.
+//!
+//! So the database is the only container in the engine's tree: `pgn`
+//! makes it its node, every other rule inherits that cell, and nothing
+//! but a finished game is ever stored in it. A streaming host follows a
+//! parse through its rule nodes (tabnas-transduce's rule-event adapter
+//! streams a container that is a node as its rules close, and walks one
+//! that arrives complete), so a database streams a game at a time and a
+//! game never leaves before its last annotation and its result have
+//! joined it. A game cannot leave sooner, since a move's annotations,
+//! comments and variations follow the move (PGN spec 8.2.3.8, 5, 8.2.5).
+//!
+//! A `game` or `movetext` that is the start rule has no database to join:
+//! the line it builds is its node, which the actions write into whenever
+//! the stack is empty (`with_line`).
 //!
 //! The running move number and side to move are bookkeeping, not model,
 //! so they hang off a [`MapRef`]'s `meta` map — which neither
@@ -29,7 +42,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use regex::Regex;
 use serde::Serialize;
-use tabnas::{MapRef, Tabnas, Value};
+use tabnas::{Context, MapRef, Tabnas, Value};
 
 use crate::commands::{js_space, scan_commands};
 use crate::model::{Comment, CommentKind, GameResult, Move, Side};
@@ -39,6 +52,23 @@ use crate::san::build_move;
 
 const COUNT_NUMBER: &str = "chess:number";
 const COUNT_SIDE: &str = "chess:side";
+
+/// The context entry holding the lines being built, innermost last.
+const LINES: &str = "chess:lines";
+
+/// The lines being built: the game, then each variation open inside it.
+fn lines(context: &mut Context) -> &mut Vec<Value> {
+    let entry = context
+        .u
+        .entry(LINES.to_string())
+        .or_insert_with(|| Value::array(Vec::new()));
+    if entry.as_array_mut().is_none() {
+        *entry = Value::array(Vec::new());
+    }
+    entry
+        .as_array_mut()
+        .expect("the entry was just made an array")
+}
 
 /// The running `{number, side}` a line counts moves with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,31 +311,37 @@ fn decompose(pattern: &Regex, src: &str) -> Move {
 pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
     let pattern = Arc::new(san);
 
-    // The database is a plain array. `gameitem` inherits this node, so
-    // both rules write to the one cell.
+    // The database is a plain array, and the only container in the
+    // engine's tree: every other rule inherits this cell.
     tn.state_action_ref("@pgn-bo", |rule, _context| {
         rule.node = Rc::new(RefCell::new(Value::array(Vec::new())));
         Ok(())
     });
 
-    tn.state_action_ref("@gameitem-bc", |rule, _context| {
-        let game = rule.child_node.clone();
-        if game.is_undefined() || game.is_null() {
+    // The game is complete: it leaves the stack and joins the database.
+    tn.state_action_ref("@gameitem-bc", |rule, context| {
+        let Some(game) = lines(context).pop() else {
             return Ok(());
-        }
+        };
         if let Some(database) = rule.node.borrow_mut().as_array_mut() {
             database.push(game);
         }
         Ok(())
     });
 
-    tn.state_action_ref("@game-bo", |rule, _context| {
-        rule.node = Rc::new(RefCell::new(new_game()));
+    // A game of a database is built on the stack. As the start rule it
+    // has no database to join, and is its own node.
+    tn.state_action_ref("@game-bo", |rule, context| {
+        if rule.node.borrow().is_undefined() {
+            rule.node = Rc::new(RefCell::new(new_game()));
+        } else {
+            lines(context).push(new_game());
+        }
         Ok(())
     });
 
-    // `movetext` normally inherits the enclosing line and writes into it.
-    // As a start rule it has no parent, so it allocates one.
+    // `movetext` normally writes into the line it is in. As the start
+    // rule it has no line, so it makes one its node.
     tn.state_action_ref("@movetext-bo", |rule, _context| {
         if rule.node.borrow().is_undefined() {
             rule.node = Rc::new(RefCell::new(new_line()));
@@ -313,92 +349,95 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
         Ok(())
     });
 
-    // `r.node` is the game: `tag` and `tagbody` have no node of their own.
-    tn.action_with_context("@tag", |rule, _context| {
+    // The line is the game: `tag` and `tagbody` write into it.
+    tn.action_with_context("@tag", |rule, context| {
         let Some(name) = rule.o0().map(|token| token.src.as_str().to_string()) else {
             return Ok(());
         };
         let Some(value) = rule.o1().and_then(|token| text_of(&token.val)) else {
             return Ok(());
         };
-        let mut node = rule.node.borrow_mut();
-        let Some(map) = as_map_mut(&mut node) else {
-            return Ok(());
-        };
-        let Some(tags) = map
-            .value
-            .get_mut("tags")
-            .and_then(|tags| tags.as_object_mut())
-        else {
-            return Ok(());
-        };
-        // PGN spec 8.1: a tag name should not repeat; the first wins, as a
-        // reader has no better rule for choosing between them.
-        if !tags.contains_key(&name) {
-            tags.insert(name, Value::String(value));
-        }
+        with_line(rule, context, |line| {
+            let Some(map) = as_map_mut(line) else {
+                return;
+            };
+            let Some(tags) = map
+                .value
+                .get_mut("tags")
+                .and_then(|tags| tags.as_object_mut())
+            else {
+                return;
+            };
+            // PGN spec 8.1: a tag name should not repeat; the first wins,
+            // as a reader has no better rule for choosing between them.
+            if !tags.contains_key(&name) {
+                tags.insert(name, Value::String(value));
+            }
+        });
         Ok(())
     });
 
-    tn.action_with_context("@result-open", |rule, _context| {
+    tn.action_with_context("@result-open", |rule, context| {
         let marker = rule.o0().map(|token| token.src.as_str().to_string());
-        set_result(rule, marker);
+        set_result(rule, context, marker);
         Ok(())
     });
 
-    tn.action_with_context("@result-close", |rule, _context| {
+    tn.action_with_context("@result-close", |rule, context| {
         let marker = rule.c0().map(|token| token.src.as_str().to_string());
-        set_result(rule, marker);
+        set_result(rule, context, marker);
         Ok(())
     });
 
     // A `[` after the movetext has started belongs to the next game, not
     // to this one's tag section.
-    tn.alt_condition("@more-tags", |rule, _context| {
-        let node = rule.node.borrow();
-        let Some(map) = as_map(&node) else {
-            return true;
-        };
-        !has_moves(map) && !map.value.contains_key("result")
+    tn.alt_condition("@more-tags", |rule, context| {
+        with_line(rule, context, |line| {
+            as_map(line).is_none_or(|map| !has_moves(map) && !map.value.contains_key("result"))
+        })
+        .unwrap_or(true)
     });
 
     // PGN spec 8.2.6: the termination marker is the last element of a
     // movetext section, so movetext after one belongs to the next game.
     // This is what lets `*1. e4 *` be two games.
-    tn.alt_condition("@no-result", |rule, _context| {
-        let node = rule.node.borrow();
-        as_map(&node).is_none_or(|map| !map.value.contains_key("result"))
+    tn.alt_condition("@no-result", |rule, context| {
+        with_line(rule, context, |line| {
+            as_map(line).is_none_or(|map| !map.value.contains_key("result"))
+        })
+        .unwrap_or(true)
     });
 
     let san = pattern.clone();
-    tn.action_with_context("@move", move |rule, _context| {
+    tn.action_with_context("@move", move |rule, context| {
         let Some(src) = rule.o0().map(|token| token.src.as_str().to_string()) else {
             return Ok(());
         };
-        let mut node = rule.node.borrow_mut();
-        let count = counter(&mut node);
         let mut played = decompose(&san, &src);
-        played.number = Some(count.number);
-        played.side = Some(count.side);
-        set_count(
-            &mut node,
-            match count.side {
-                Side::White => Count {
-                    number: count.number,
-                    side: Side::Black,
+        with_line(rule, context, |line| {
+            let count = counter(line);
+            played.number = Some(count.number);
+            played.side = Some(count.side);
+            set_count(
+                line,
+                match count.side {
+                    Side::White => Count {
+                        number: count.number,
+                        side: Side::Black,
+                    },
+                    // Saturating, because the number can come from a
+                    // `FEN` tag and PGN spec 9.7 bounds that field
+                    // nowhere. A panic here would turn hostile input into
+                    // an `internal` diagnostic; JavaScript, counting in
+                    // doubles, just keeps going.
+                    Side::Black => Count {
+                        number: count.number.saturating_add(1),
+                        side: Side::White,
+                    },
                 },
-                // Saturating, because the number can come from a `FEN`
-                // tag and PGN spec 9.7 bounds that field nowhere. A
-                // panic here would turn hostile input into an `internal`
-                // diagnostic; JavaScript, counting in doubles, just
-                // keeps going.
-                Side::Black => Count {
-                    number: count.number.saturating_add(1),
-                    side: Side::White,
-                },
-            },
-        );
-        push_move(&mut node, to_value(&played));
+            );
+            push_move(line, to_value(&played));
+        });
         Ok(())
     });
 
@@ -416,101 +455,117 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
     // follows. Import format allows any number of periods, but three or
     // more is the export-format spelling for "Black to move", so it is
     // worth honouring where it appears.
-    tn.action_with_context("@number", |rule, _context| {
+    tn.action_with_context("@number", |rule, context| {
         let Some(src) = rule.o0().map(|token| token.src.as_str().to_string()) else {
             return Ok(());
         };
         let digits: String = src.chars().take_while(char::is_ascii_digit).collect();
-        let mut node = rule.node.borrow_mut();
-        let mut count = counter(&mut node);
-        if let Ok(number) = digits.parse::<u64>() {
-            count.number = number;
-        }
-        match src.matches('.').count() {
-            0 => {}
-            1 => count.side = Side::White,
-            _ => count.side = Side::Black,
-        }
-        set_count(&mut node, count);
+        with_line(rule, context, |line| {
+            let mut count = counter(line);
+            if let Ok(number) = digits.parse::<u64>() {
+                count.number = number;
+            }
+            match src.matches('.').count() {
+                0 => {}
+                1 => count.side = Side::White,
+                _ => count.side = Side::Black,
+            }
+            set_count(line, count);
+        });
         Ok(())
     });
 
-    tn.action_with_context("@nag", |rule, _context| {
+    tn.action_with_context("@nag", |rule, context| {
         let Some(src) = rule.o0().map(|token| token.src.as_str().to_string()) else {
             return Ok(());
         };
         let Ok(glyph) = src[1..].parse::<u32>() else {
             return Ok(());
         };
-        annotate(
-            &mut rule.node.borrow_mut(),
-            "nags",
-            Value::Number(glyph as f64),
-        );
+        with_line(rule, context, |line| {
+            annotate(line, "nags", Value::Number(glyph as f64))
+        });
         Ok(())
     });
 
-    tn.action_with_context("@brace-comment", move |rule, _context| {
-        comment_action(rule, CommentKind::Brace, commands);
+    tn.action_with_context("@brace-comment", move |rule, context| {
+        comment_action(rule, context, CommentKind::Brace, commands);
         Ok(())
     });
 
-    tn.action_with_context("@line-comment", move |rule, _context| {
-        comment_action(rule, CommentKind::Line, commands);
+    tn.action_with_context("@line-comment", move |rule, context| {
+        comment_action(rule, context, CommentKind::Line, commands);
         Ok(())
     });
 
     // A variation replaces the move it follows, so it starts on that
-    // move's number and side, not on the next one.
-    tn.state_action_ref("@rav-bo", |rule, _context| {
-        let count = match rule.parent_node.clone() {
-            Some(parent) => {
-                let mut parent = parent.borrow_mut();
-                match last_move_count(&parent) {
-                    Some(count) => count,
-                    None => counter(&mut parent),
-                }
-            }
-            None => Count::default(),
-        };
+    // move's number and side, not on the next one. It is built on the
+    // stack, above the line it is in.
+    tn.state_action_ref("@rav-bo", |rule, context| {
+        let count = with_line(rule, context, |parent| match last_move_count(parent) {
+            Some(count) => count,
+            None => counter(parent),
+        })
+        .unwrap_or_default();
         let mut line = new_line();
         set_count(&mut line, count);
-        rule.node = Rc::new(RefCell::new(line));
+        lines(context).push(line);
         Ok(())
     });
 
-    tn.state_action_ref("@element-bc", |rule, _context| {
+    // The variation is complete: it leaves the stack and joins the move
+    // it follows, or, when it follows no move, the line's starting
+    // position.
+    tn.state_action_ref("@element-bc", |rule, context| {
         if Some(&Value::Bool(true)) != rule.u.get("rav") {
             return Ok(());
         }
-        let variation = rule.child_node.clone();
-        if variation.is_undefined() || variation.is_null() {
+        let Some(variation) = lines(context).pop() else {
             return Ok(());
-        }
-        // A variation replaces the move it follows; one that follows no
-        // move annotates the line's starting position instead.
-        annotate(&mut rule.node.borrow_mut(), "variations", variation);
+        };
+        with_line(rule, context, |line| {
+            annotate(line, "variations", variation)
+        });
         Ok(())
     });
 }
 
-fn set_result(rule: &mut tabnas::Rule, marker: Option<String>) {
+/// Run `f` on the line being built: the innermost on the stack, or, when
+/// the stack is empty, the rule's node, which is a line when `game` or
+/// `movetext` is the start rule. The database is never one.
+fn with_line<R>(
+    rule: &tabnas::Rule,
+    context: &mut Context,
+    f: impl FnOnce(&mut Value) -> R,
+) -> Option<R> {
+    if let Some(line) = lines(context).last_mut() {
+        return Some(f(line));
+    }
+    let mut node = rule.node.borrow_mut();
+    as_map(&node)?;
+    Some(f(&mut node))
+}
+
+fn set_result(rule: &tabnas::Rule, context: &mut Context, marker: Option<String>) {
     let Some(marker) = marker else {
         return;
     };
     let Some(result) = GameResult::from_marker(&marker) else {
         return;
     };
-    let mut node = rule.node.borrow_mut();
-    if let Some(map) = as_map_mut(&mut node) {
-        map.value.insert("result".to_string(), to_value(&result));
-    }
+    with_line(rule, context, |line| {
+        if let Some(map) = as_map_mut(line) {
+            map.value.insert("result".to_string(), to_value(&result));
+        }
+    });
 }
 
-fn comment_action(rule: &mut tabnas::Rule, kind: CommentKind, commands: bool) {
+fn comment_action(rule: &tabnas::Rule, context: &mut Context, kind: CommentKind, commands: bool) {
     let Some(text) = rule.o0().and_then(|token| text_of(&token.val)) else {
         return;
     };
     let comment = make_comment(kind, text, commands);
-    annotate(&mut rule.node.borrow_mut(), "comments", to_value(&comment));
+    with_line(rule, context, |line| {
+        annotate(line, "comments", to_value(&comment))
+    });
 }
