@@ -80,6 +80,13 @@
 ; `:started`. A member being passed over is `[:skip opens]`, one marker in
 ; opens per container open inside it. Once the database ends the state is
 ; `[:done]`, and nothing may follow it.
+;
+; Each game is a record of the text: the step that ends a game answers
+; alchemy's `:record-end` after its movetext, and so does the step that
+; opens the database, so a host's writer holds a game until its end, and
+; a run that fails part way leaves whole games behind. What parts a game
+; from the one before is written with the next game's first line, so it
+; belongs to that game's record.
 
 ; The top frame, or :none before the root.
 def pgn-top [s]
@@ -308,10 +315,10 @@ def pgn-game-end [tags mbuf abuf result s]
     let [full (pgn-result body result)]
       let [db (pgn-mark [:db (pgn-ended tags mbuf body result)] (pop s))]
         match [full tags]
-          case [["" ""] false] (transition db ["1.\n"])
-          case [["" ""] true] (transition db [])
-          case [_ true] (transition db ["\n" (pgn-lines full)])
-          case _ (transition db [(pgn-lines full)])
+          case [["" ""] false] (transition db ["1.\n" :record-end])
+          case [["" ""] true] (transition db [:record-end])
+          case [_ true] (transition db ["\n" (pgn-lines full) :record-end])
+          case _ (transition db [(pgn-lines full) :record-end])
 
 def pgn-result [body result]
   match result
@@ -512,7 +519,7 @@ def pgn-object [s]
 
 def pgn-array [s]
   match (pgn-top s)
-    case :none (transition [[:db :none]] [])
+    case :none (transition [[:db :none]] [:record-end])
     case [:g-moves tags] (transition (push [:moves (pgn-empty) :none] (pgn-mark [:g-moves-open tags] s)) [])
     case [:l-moves] (transition (push [:moves (pgn-empty) :none] (pgn-mark [:l-moves-open] s)) [])
     case [:open-list lk] (transition (pgn-mark [lk (pgn-empty)] s) [])
