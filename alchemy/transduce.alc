@@ -243,16 +243,24 @@ def pgn-transduce-game-open [stack rule]
   let [result (match (transduce-token 0 rule) (case missing missing) (case t (match (get :name t) (case "#RES" (get :src t)) (case _ missing))))]
     transition (push [:game :tags [] missing missing missing [[] [] []] result] stack) [object-start (key "tags") object-start]
 
+; A tag pair: its name's token and its value's. A tag body whose tokens
+; did not lex (a value that runs into a line break, which TypeScript's
+; engine passes as an open with no tokens before the lexer's error) adds
+; nothing, and the grammar's error ends the run as it ends the walk.
 def pgn-transduce-tag [stack rule]
-  let [name (get :src (transduce-token 0 rule))]
-    let [value (get :val (transduce-token 1 rule))]
-      match (top stack)
-        case [:game phase seen fen at mv pre result]
-          match (pgn-transduce-member name seen)
-            case true (transition stack [])
-            case false
-              let [fen2 (match (pgn-transduce-equal "FEN" name) (case true value) (case false fen))]
-                transition (push [:game phase (push name seen) fen2 at mv pre result] (pop stack)) [(key name) (scalar value)]
+  match [(transduce-token 0 rule) (transduce-token 1 rule)]
+    case [missing t] (transition stack [])
+    case [t missing] (transition stack [])
+    case [n v] (pgn-transduce-pair-tag stack (get :src n) (get :val v))
+
+def pgn-transduce-pair-tag [stack name value]
+  match (top stack)
+    case [:game phase seen fen at mv pre result]
+      match (pgn-transduce-member name seen)
+        case true (transition stack [])
+        case false
+          let [fen2 (match (pgn-transduce-equal "FEN" name) (case true value) (case false fen))]
+            transition (push [:game phase (push name seen) fen2 at mv pre result] (pop stack)) [(key name) (scalar value)]
 
 def pgn-transduce-number [stack token]
   let [frame (top stack)]
