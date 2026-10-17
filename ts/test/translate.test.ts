@@ -55,3 +55,28 @@ test('PGN reads and writes its own tree, and its loss lines are sentences', () =
     assert.match(line, /^[A-Z].*\.$/s, `${JSON.stringify(line)} is not a sentence`)
   }
 })
+
+// The transducer part the manifest names is the one the package carries,
+// under the entry a host calls.
+test('translation parts carry the transducer the manifest names', () => {
+  const parts = translate()
+  assert.equal(parts.transduce?.entry, 'pgn-transduce')
+  assert.equal(
+    parts.transduce?.source,
+    readFileSync(path.join(root, manifest().translate.transduce), 'utf8'))
+})
+
+// A host links the parts with its own program and other formats' parts,
+// so every definition in each is named for PGN and none defines an
+// `export` of its own.
+test('the render and the transducer are libraries named for PGN', () => {
+  const parts = translate()
+  for (const [part, entry] of [[parts.render, 'pgn-render'], [parts.transduce, 'pgn-transduce']] as const) {
+    const names = (part?.source ?? '')
+      .split('\n')
+      .filter((line: string) => line.startsWith('def '))
+      .map((line: string) => line.slice(4).split(/\s/)[0])
+    assert.ok(names.includes(entry), `${entry} is not defined`)
+    for (const name of names) assert.ok(name.startsWith('pgn-'), `${name} is not named for PGN`)
+  }
+})

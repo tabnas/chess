@@ -66,6 +66,24 @@ fn the_render_the_manifest_names_is_the_one_the_crate_embeds() {
     );
 }
 
+#[test]
+fn the_transducer_the_manifest_names_is_the_one_the_crate_embeds() {
+    let translate = translate_object();
+    let path = translate["transduce"]
+        .as_str()
+        .expect("translate.transduce names a file");
+    let parts = tabnas_chess::translate().expect("PGN carries translation parts");
+    let transduce = parts
+        .transduce
+        .expect("translate.transduce names a file, and the crate carries no transducer");
+    assert_eq!(transduce.entry, "pgn-transduce");
+    assert_eq!(
+        transduce.source,
+        Some(read(path).as_str()),
+        "translate.transduce names {path}, and the crate embeds another text: run npm run embed in ts"
+    );
+}
+
 /// An embed takes a plain tree into a format's own schema. PGN's tree is
 /// the reader's database of games, and a plain tree has no PGN form, so
 /// its manifest names none and the crate carries none; a manifest that
@@ -126,22 +144,24 @@ fn the_loss_is_a_list_of_sentences() {
     }
 }
 
-/// A host links the render with its own program and other formats'
-/// parts, so every definition is named for PGN, the entry point is
-/// `pgn-render`, and the file defines no `export` of its own.
+/// A host links the render and the transducer with its own program and
+/// other formats' parts, so every definition in each is named for PGN, the
+/// entry points are `pgn-render` and `pgn-transduce`, and neither file
+/// defines an `export` of its own.
 #[test]
-fn the_render_is_a_library_named_for_pgn() {
-    let render = tabnas_chess::translate()
-        .and_then(|parts| parts.render)
-        .and_then(|render| render.source)
-        .expect("PGN carries the render's text");
-    let names: Vec<&str> = render
-        .lines()
-        .filter_map(|line| line.strip_prefix("def "))
-        .filter_map(|rest| rest.split_whitespace().next())
-        .collect();
-    assert!(names.contains(&"pgn-render"), "{names:?}");
-    for name in &names {
-        assert!(name.starts_with("pgn-"), "{name} is not named for PGN");
+fn the_render_and_the_transducer_are_libraries_named_for_pgn() {
+    let parts = tabnas_chess::translate().expect("PGN carries translation parts");
+    for part in [parts.render, parts.transduce] {
+        let part = part.expect("PGN carries the part");
+        let source = part.source.expect("PGN carries the part's text");
+        let names: Vec<&str> = source
+            .lines()
+            .filter_map(|line| line.strip_prefix("def "))
+            .filter_map(|rest| rest.split_whitespace().next())
+            .collect();
+        assert!(names.contains(&part.entry), "{names:?}");
+        for name in &names {
+            assert!(name.starts_with("pgn-"), "{name} is not named for PGN");
+        }
     }
 }

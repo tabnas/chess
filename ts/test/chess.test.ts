@@ -309,3 +309,67 @@ describe('errors', () => {
   })
 })
 
+
+describe('tokens', () => {
+  // A reader of the rule passes (a transducer part) sees the tokens and
+  // not the tree, so each token carries the value its text spells: a move
+  // number its number, a move the move taken apart, a glyph its number, a
+  // comment the comment the tree holds, with its commands as the
+  // `commands` option reads them. Mirrors go/chess_test.go and
+  // rs/tests/chess_test.rs.
+  function tokens(src: string, options?: any) {
+    const tn = mk(options)
+    const seen: any[] = []
+    tn.sub({
+      ruleDone: (rule: any, _ctx: any, done: any) => {
+        if ('o' !== done.state || 'element' !== rule.name || null == rule.o0) return
+        seen.push([rule.o0.name, rule.o0.val])
+      },
+    })
+    tn.parse(src)
+    return JSON.stringify(seen)
+  }
+
+  test('a move, a move number, a glyph and a comment carry their values', () => {
+    assert.equal(
+      tokens('12... Nbxd7+! $14 {a [%clk 0:01:00]} e8=Q# ; b\n*'),
+      JSON.stringify([
+        ['#MVN', 12],
+        ['#SAN', {
+          san: 'Nbxd7+', piece: 'N', disambiguation: { file: 'b' }, capture: true,
+          to: 'd7', check: '+', annotation: '!',
+        }],
+        ['#NAG', 14],
+        ['#CMT', { kind: 'brace', text: 'a [%clk 0:01:00]', commands: [{ name: 'clk', args: ['0:01:00'] }] }],
+        ['#SAN', { san: 'e8=Q#', piece: 'P', to: 'e8', promotion: 'Q', check: '#' }],
+        ['#RMK', { kind: 'line', text: ' b' }],
+      ]),
+    )
+  })
+
+  test("a comment's token reads its commands as the option says", () => {
+    assert.equal(
+      tokens('e4 {[%clk 0:01:00]} *', { commands: false }),
+      JSON.stringify([
+        ['#SAN', { san: 'e4', piece: 'P', to: 'e4' }],
+        ['#CMT', { kind: 'brace', text: '[%clk 0:01:00]' }],
+      ]),
+    )
+  })
+
+  test("the tree's comment is a copy of the token's", () => {
+    const tn = mk()
+    let token: any
+    tn.sub({
+      ruleDone: (rule: any, _ctx: any, done: any) => {
+        if ('o' === done.state && 'element' === rule.name && '#CMT' === rule.o0?.name) token = rule.o0.val
+      },
+    })
+    const db = tn.parse('e4 {[%clk 0:01:00]} *')
+    const comment = db[0].moves[0].comments[0]
+    assert.deepStrictEqual(comment, token)
+    assert.notStrictEqual(comment, token)
+    assert.notStrictEqual(comment.commands, token.commands)
+    assert.notStrictEqual(comment.commands[0].args, token.commands[0].args)
+  })
+})
