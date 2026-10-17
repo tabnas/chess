@@ -689,16 +689,17 @@ def pgn-render [input]
 ;
 ; Scans, since a step's outputs are one vector and the language has no
 ; way to join two: the first yields, for each pass, events and items, a
-; move's field as [:kv name value] (nothing where the value is missing)
-; and an annotation list as [:comments list] or [:nags list] after its
-; key and its opening bracket; each of five identical scans after it
-; expands an item one level (a field into its key and value, a list into
-; its elements and its closing bracket, a comment into its members, its
-; commands into theirs), so the nesting of a comment's commands is flat
-; after the fifth. The first's state is a
-; stack: at its bottom :pgn while the database is open and :done once it
-; has closed (an empty document makes no pass, and is the empty database
-; at finish), then a frame per open game or variation, innermost last.
+; move's start as [:move move at] and an annotation list as [:comments
+; list] or [:nags list] after its key and its opening bracket; each of
+; five identical scans after it expands an item one level (a move into
+; its fields as [:kv name value], nothing where the value is missing, a
+; field into its key and value, a list into its elements and its closing
+; bracket, a comment into its members, its commands into theirs), so the
+; nesting of a comment's commands is flat after the fifth. The first's
+; state is a stack: at its bottom :pgn while the database is open and
+; :done once it has closed (an empty document makes no pass, and is the
+; empty database at finish), then a frame per open game or variation,
+; innermost last.
 ; A game's frame is [:game phase seen fen at mv pre result]: its
 ; phase (:tags, then :moves at its first move, then :closed), the tag
 ; names it has, its FEN, the count of its next move, its open move, the
