@@ -23,6 +23,8 @@ use tabnas::{
     Value, TIN_CM,
 };
 
+use crate::actions::{comment_value, decompose, make_comment, move_value};
+use crate::model::CommentKind;
 use crate::san::{ends_token, move_number, nag, nag_strict, result, tag_name};
 
 /// The token identities this plugin mints, in the order it mints them.
@@ -91,11 +93,44 @@ fn result_matcher() -> impl Fn(&str) -> Option<MatchTokenResult> + Send + Sync +
     }
 }
 
+/// A move's token carries the move it spells, taken apart by the pattern
+/// that cut it, for a reader of the rule passes (a transducer part), which
+/// sees the tokens and not the tree. The move actions take the tree's move
+/// from the token, so a move is taken apart once.
 fn san_matcher(san: Regex) -> impl Fn(&str) -> Option<MatchTokenResult> + Send + Sync + 'static {
     move |rest: &str| {
         let found = san.find(rest)?;
         let len = found.end();
-        ends_token(rest, len, "").then(|| consumed(rest, len))?
+        if !ends_token(rest, len, "") {
+            return None;
+        }
+        let source = &rest[..len];
+        Some(MatchTokenResult::new(
+            source,
+            move_value(&decompose(&san, source)),
+        ))
+    }
+}
+
+/// A move number's token carries the number, its digits before any space
+/// or period. The pattern allows nine digits at most, so the number always
+/// fits, as the action reads it; `Undefined` is for a source the pattern
+/// never cuts.
+fn number_value(source: &str) -> Value {
+    let digits: String = source.chars().take_while(char::is_ascii_digit).collect();
+    match digits.parse::<u64>() {
+        Ok(number) => Value::Number(number as f64),
+        Err(_) => Value::Undefined,
+    }
+}
+
+/// A glyph's token carries its number, the digits after its `$`. The
+/// pattern allows nine digits at most, so the glyph always fits a `u32`, as
+/// the action reads it; `Undefined` is for a source the pattern never cuts.
+fn nag_value(source: &str) -> Value {
+    match source.get(1..).map(str::parse::<u32>) {
+        Some(Ok(glyph)) => Value::Number(glyph as f64),
+        _ => Value::Undefined,
     }
 }
 
@@ -108,7 +143,10 @@ fn move_number_matcher() -> impl Fn(&str) -> Option<MatchTokenResult> + Send + S
         let found = move_number().find(rest)?;
         let len = found.end();
         if found.as_str().contains('.') || ends_token(rest, len, "/") {
-            return consumed(rest, len);
+            return Some(MatchTokenResult::new(
+                &rest[..len],
+                number_value(&rest[..len]),
+            ));
         }
         None
     }
@@ -121,24 +159,33 @@ fn move_number_matcher() -> impl Fn(&str) -> Option<MatchTokenResult> + Send + S
 /// `(?!\d)` the canonical pattern ends on, checked one step later.
 fn nag_matcher(strict: bool) -> impl Fn(&str) -> Option<MatchTokenResult> + Send + Sync + 'static {
     move |rest: &str| {
-        if !strict {
-            return consumed(rest, nag().find(rest)?.end());
-        }
-        let found = nag_strict().find(rest)?;
-        let end = found.end();
-        if rest.as_bytes().get(end).is_some_and(u8::is_ascii_digit) {
-            return None;
-        }
-        consumed(rest, end)
+        let end = if strict {
+            let end = nag_strict().find(rest)?.end();
+            if rest.as_bytes().get(end).is_some_and(u8::is_ascii_digit) {
+                return None;
+            }
+            end
+        } else {
+            nag().find(rest)?.end()
+        };
+        Some(MatchTokenResult::new(&rest[..end], nag_value(&rest[..end])))
     }
 }
 
 /// The three hand-written matchers, with the orders TypeScript and Go
 /// give them: all below the fixed matcher at 2e6.
-pub(crate) fn lex_matchers(tokens: &Tokens) -> Vec<LexMatcher> {
+pub(crate) fn lex_matchers(tokens: &Tokens, commands: bool) -> Vec<LexMatcher> {
     vec![
-        imperative("pgnComment", 1_200_000.0, comment_matcher(tokens.cmt)),
-        imperative("pgnRemark", 1_300_000.0, remark_matcher(tokens.rmk)),
+        imperative(
+            "pgnComment",
+            1_200_000.0,
+            comment_matcher(tokens.cmt, commands),
+        ),
+        imperative(
+            "pgnRemark",
+            1_300_000.0,
+            remark_matcher(tokens.rmk, commands),
+        ),
         imperative("pgnEscape", 1_500_000.0, escape_matcher()),
     ]
 }
@@ -168,8 +215,12 @@ fn line_from(rest: &str) -> &str {
     }
 }
 
+/// A comment's token carries the comment the tree holds, its `[%…]`
+/// commands read as the `commands` option says, so a reader of the rule
+/// passes (a transducer part) has it without the action that files it.
 fn comment_matcher(
     tin: Tin,
+    commands: bool,
 ) -> impl for<'source> Fn(&mut Lexer<'source>, &mut Rule, &mut Context) -> Option<Token>
        + Send
        + Sync
@@ -189,7 +240,8 @@ fn comment_matcher(
         let source = rest[..close + 2].to_string();
         let inner = source[1..source.len() - 1].to_string();
         let point = lexer.point();
-        let token = lexer.token("#CMT", tin, Value::String(inner), source.as_str(), point);
+        let comment = comment_value(&make_comment(CommentKind::Brace, inner, commands));
+        let token = lexer.token("#CMT", tin, comment, source.as_str(), point);
         lexer.advance_chars(source.chars().count());
         Some(token)
     }
@@ -197,6 +249,7 @@ fn comment_matcher(
 
 fn remark_matcher(
     tin: Tin,
+    commands: bool,
 ) -> impl for<'source> Fn(&mut Lexer<'source>, &mut Rule, &mut Context) -> Option<Token>
        + Send
        + Sync
@@ -209,7 +262,8 @@ fn remark_matcher(
         let source = line_from(rest).to_string();
         let inner = source[1..].to_string();
         let point = lexer.point();
-        let token = lexer.token("#RMK", tin, Value::String(inner), source.as_str(), point);
+        let comment = comment_value(&make_comment(CommentKind::Line, inner, commands));
+        let token = lexer.token("#RMK", tin, comment, source.as_str(), point);
         lexer.advance_chars(source.chars().count());
         Some(token)
     }

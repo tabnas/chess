@@ -13,6 +13,7 @@ type TranslationParts = Readonly<{
   lift?: TranslationPart
   embed?: TranslationPart
   render?: TranslationPart
+  transduce?: TranslationPart
 }>
 
 const TRANSLATION: TranslationParts = Object.freeze({
@@ -51,6 +52,7 @@ const TRANSLATION: TranslationParts = Object.freeze({
     "root": "array",
     "schema": "pgn-database",
     "render": "alchemy/render.alc",
+    "transduce": "alchemy/transduce.alc",
     "loss": [
       "Layout is not kept: each tag pair is written on a line of its own, a blank line comes before a game's movetext and between two games, and the movetext is broken into lines of at most 79 characters where its tokens allow.",
       "Move numbers are written as PGN's export format writes them, before each white move and before each black move but one that follows the white move of its number with no comment or variation between, so the document's own move numbers are not kept; a move number of more than nine digits, which the reader counts from a FEN tag, is not written, and the count gives it again.",
@@ -641,6 +643,418 @@ def pgn-finish [s]
 def pgn-render [input]
   join ""
     scan-emit [] pgn-step pgn-finish (events input)
+` }),
+  transduce: Object.freeze({ entry: "pgn-transduce", source: `; PGN's transducer part: a database's JSON events from the chess grammar's
+; rule passes, for a host that reads parser events (alchemy-cli's
+; \`translate\` and \`run --grammar pgn\`). It is hand-written, since the
+; grammar builds each game on a stack in the parse's context and stores it
+; in the database only once the game is complete, so no pass carries a
+; game; every event is the one the walk of the grammar's value under its
+; default options gives.
+;
+; The passes: a move's token (\`#SAN\`) carries the move taken apart, a move
+; number's (\`#MVN\`) its number, a glyph's (\`#NAG\`) its number, a comment's
+; (\`#CMT\`, \`#RMK\`) the comment with its \`[%...]\` commands; a tag pair is
+; \`tagbody\`'s open on its name and its value, a variation \`rav\`'s open
+; and close, and the result a token of the game's open or close. A game
+; is the object the walk writes: tags, moves, then the annotations of the
+; position before its first move (comments, nags, in the order they first
+; appear) and the result. A move is its fields as the notation states
+; them, its number and side, then the annotations that follow it
+; (comments, nags, variations) in the order they first appear; a
+; variation is an object of moves and its own leading annotations, on the
+; number and side of the move it replaces.
+;
+; The part counts the moves as the grammar does: a FEN tag (PGN spec 9.7)
+; seeds a game's count, a move number sets it and, by its periods, the
+; side, and Black's move ends a move pair. Alchemy has no arithmetic, so
+; the next number is the count of the pieces a string of n commas splits
+; into, n + 1, under max_scalar_bytes; a count past 10,000 is read whole.
+;
+; Annotations are held until the move they follow closes, since a later
+; one may join the list of an earlier one, and a variation is streamed in
+; place, as it arrives, after the annotations that came before it. So
+; what the walk orders otherwise is refused in the part's own words, and
+; read whole (\`fail :unstreamable\`): an annotation after a variation whose
+; list began before it, a variation before its line's first move (whose
+; annotations follow the moves in the tree), and a FEN tag the part does
+; not read alike in every runtime (a character outside printable ASCII, a
+; move number with a leading zero or of more than fifteen digits).
+;
+; A tag section may follow movetext that holds annotations only (\`{c}
+; [Event "x"] 1. e4\`), so a game's tags stay open until its first move or
+; its end. A document the grammar refuses fails the run after the events
+; the passes before the refusal give, as the walk fails it, and a host
+; that reads a part commits no byte of it.
+;
+; Scans, since a step's outputs are one vector and the language has no
+; way to join two: the first yields, for each pass, events and items, a
+; move's start as [:move move at] and an annotation list as [:comments
+; list] or [:nags list] after its key and its opening bracket; each of
+; five identical scans after it expands an item one level (a move into
+; its fields as [:kv name value], nothing where the value is missing, a
+; field into its key and value, a list into its elements and its closing
+; bracket, a comment into its members, its commands into theirs), so the
+; nesting of a comment's commands is flat after the fifth. The first's
+; state is a stack: at its bottom :pgn while the database is open and
+; :done once it has closed (an empty document makes no pass, and is the
+; empty database at finish), then a frame per open game or variation,
+; innermost last.
+; A game's frame is [:game phase seen fen at mv pre result]: its
+; phase (:tags, then :moves at its first move, then :closed), the tag
+; names it has, its FEN, the count of its next move, its open move, the
+; annotations before its first move, and its result; a variation's is
+; [:rav at mv pre]. An open move is [number side fields comments nags
+; closed vopen]: its count, its annotation fields in the order they
+; appear, the comments and glyphs held, the fields already written, and
+; whether its variations' array is open. Nothing grows with the length of
+; a database, only with a game's nesting and the annotations of one move.
+
+; --- Strings, lists and items ---
+
+; Whether two strings are one: the first, which is never empty, splits
+; the second into two empty pieces just when they are equal.
+def pgn-transduce-equal [a b]
+  match (split a b)
+    case ["" ""] true
+    case _ false
+
+def pgn-transduce-member [name names]
+  match (count (filter (fn [n] (pgn-transduce-equal name n)) names))
+    case 0 false
+    case _ true
+
+def pgn-transduce-add [name names]
+  match (pgn-transduce-member name names)
+    case true names
+    case false (push name names)
+
+def pgn-transduce-pair [k value items]
+  match value
+    case missing items
+    case v (push (scalar v) (push (key k) items))
+
+def pgn-transduce-pushes [rule]
+  match (get :alt rule)
+    case missing ""
+    case alt (get :p alt)
+
+; --- Counting moves ---
+
+def pgn-transduce-inc [n]
+  count (split "," (repeat n ","))
+
+; The count of the move after one made at \`at\`: Black's move after
+; White's, White's move of the next pair after Black's.
+def pgn-transduce-next [at]
+  match at
+    case [n "w"] [n "b"]
+    case [n s]
+      match (compare n 10000)
+        case :greater (fail :unstreamable "a move number past 10000, which the part does not count")
+        case _ [(pgn-transduce-inc n) "w"]
+
+def pgn-transduce-fields [text]
+  filter (fn [f] (match f (case "" false) (case _ true))) (split " " (string-join " " (split "\\t" text)))
+
+def pgn-transduce-fen-number [field]
+  match field
+    case missing 1
+    case f
+      match (chars-within [[48 57]] f)
+        case false 1
+        case true
+          match (is-number f)
+            case false (fail :unstreamable "a FEN move number with a leading zero, which the part does not read")
+            case true
+              match (compare (length f) 15)
+                case :greater (fail :unstreamable "a FEN move number of more than fifteen digits, which the part does not read")
+                case _
+                  match (compare (number f) 0)
+                    case :greater (number f)
+                    case _ 1
+
+; The count a game starts at (PGN spec 9.7): the FEN tag's second field
+; is the side to move and its sixth the move number; White's first move
+; without one.
+def pgn-transduce-start [fen]
+  match fen
+    case missing [1 "w"]
+    case f
+      match (chars-within [[9 9] [32 126]] f)
+        case false (fail :unstreamable "a FEN tag holding a character outside printable ASCII, which the part does not split")
+        case true
+          let [fields (pgn-transduce-fields f)]
+            [(pgn-transduce-fen-number (get-path (path 5) fields)) (match (get-path (path 1) fields) (case "b" "b") (case _ "w"))]
+
+; --- Frames ---
+
+def pgn-transduce-at [frame]
+  match frame
+    case [:game phase seen fen at mv pre result]
+      match at
+        case missing (pgn-transduce-start fen)
+        case a a
+    case [:rav at mv pre] at
+
+def pgn-transduce-raw-at [frame]
+  match frame
+    case [:game phase seen fen at mv pre result] at
+    case [:rav at mv pre] at
+
+def pgn-transduce-mv [frame]
+  match frame
+    case [:game phase seen fen at mv pre result] mv
+    case [:rav at mv pre] mv
+
+def pgn-transduce-pre [frame]
+  match frame
+    case [:game phase seen fen at mv pre result] pre
+    case [:rav at mv pre] pre
+
+def pgn-transduce-with [frame at mv pre]
+  match frame
+    case [:game phase seen fen a m p result] [:game phase seen fen at mv pre result]
+    case [:rav a m p] [:rav at mv pre]
+
+; A game's first move closes its tags and opens its moves.
+def pgn-transduce-moving [frame items]
+  match frame
+    case [:game :tags seen fen at mv pre result] [[:game :moves seen fen at mv pre result] (push array-start (push (key "moves") (push object-end items)))]
+    case f [f items]
+
+; --- Annotations ---
+
+; An annotation field pushed onto items, its key, its opening bracket and
+; its list, unless it is none, already written, or the variations, which
+; are written in place.
+def pgn-transduce-put [name comments nags closed items]
+  match name
+    case "comments"
+      match (pgn-transduce-member name closed)
+        case true items
+        case false (push [:comments comments] (push array-start (push (key "comments") items)))
+    case "nags"
+      match (pgn-transduce-member name closed)
+        case true items
+        case false (push [:nags nags] (push array-start (push (key "nags") items)))
+    case _ items
+
+; The fields held, in the order they appeared, pushed onto items; at most
+; three, so unrolled.
+def pgn-transduce-held [fields comments nags closed items]
+  pipe items
+    pgn-transduce-put (get-path (path 0) fields) comments nags closed
+    pgn-transduce-put (get-path (path 1) fields) comments nags closed
+    pgn-transduce-put (get-path (path 2) fields) comments nags closed
+
+def pgn-transduce-annotate [mv name value]
+  match mv
+    case [n s fields comments nags closed vopen]
+      match (pgn-transduce-member name closed)
+        case true (fail :unstreamable "an annotation after a variation, joining a list that began before it")
+        case false
+          match name
+            case "comments" [n s (pgn-transduce-add name fields) (push value comments) nags closed vopen]
+            case _ [n s (pgn-transduce-add name fields) comments (push value nags) closed vopen]
+
+def pgn-transduce-pre-add [pre name value]
+  match pre
+    case [fields comments nags]
+      match name
+        case "comments" [(pgn-transduce-add name fields) (push value comments) nags]
+        case _ [(pgn-transduce-add name fields) comments (push value nags)]
+
+def pgn-transduce-pre-items [pre items]
+  match pre
+    case [fields comments nags] (pgn-transduce-held fields comments nags [] items)
+
+; --- Moves ---
+
+; A move's start: its fields as the notation states them (the token's
+; move), its number and its side, as one item the scans expand.
+def pgn-transduce-move-open [move at items]
+  push [:move move at] items
+
+; A move's end: its variations' array, then the fields still held.
+def pgn-transduce-move-close [mv items]
+  match mv
+    case missing items
+    case [n s fields comments nags closed vopen]
+      let [start (match vopen (case true (push array-end items)) (case false items))]
+        push object-end (pgn-transduce-held fields comments nags closed start)
+
+; --- The passes ---
+
+def pgn-transduce-game-open [stack rule]
+  let [result (match (transduce-token 0 rule) (case missing missing) (case t (match (get :name t) (case "#RES" (get :src t)) (case _ missing))))]
+    transition (push [:game :tags [] missing missing missing [[] [] []] result] stack) [object-start (key "tags") object-start]
+
+; A tag pair: its name's token and its value's. A tag body whose tokens
+; did not lex (a value that runs into a line break, which TypeScript's
+; engine passes as an open with no tokens before the lexer's error) adds
+; nothing, and the grammar's error ends the run as it ends the walk.
+def pgn-transduce-tag [stack rule]
+  match [(transduce-token 0 rule) (transduce-token 1 rule)]
+    case [missing t] (transition stack [])
+    case [t missing] (transition stack [])
+    case [n v] (pgn-transduce-pair-tag stack (get :src n) (get :val v))
+
+def pgn-transduce-pair-tag [stack name value]
+  match (top stack)
+    case [:game phase seen fen at mv pre result]
+      match (pgn-transduce-member name seen)
+        case true (transition stack [])
+        case false
+          let [fen2 (match (pgn-transduce-equal "FEN" name) (case true value) (case false fen))]
+            transition (push [:game phase (push name seen) fen2 at mv pre result] (pop stack)) [(key name) (scalar value)]
+
+def pgn-transduce-number [stack token]
+  let [frame (top stack)]
+    let [at (pgn-transduce-at frame)]
+      let [n (get :val token)]
+        let [at2 (match (count (split "." (get :src token))) (case 1 [n (get-path (path 1) at)]) (case 2 [n "w"]) (case _ [n "b"]))]
+          transition (push (pgn-transduce-with frame at2 (pgn-transduce-mv frame) (pgn-transduce-pre frame)) (pop stack)) []
+
+def pgn-transduce-move [stack move]
+  let [frame (top stack)]
+    let [at (pgn-transduce-at frame)]
+      match (pgn-transduce-moving frame [])
+        case [moving items]
+          let [mv [(get-path (path 0) at) (get-path (path 1) at) [] [] [] [] false]]
+            transition (push (pgn-transduce-with moving (pgn-transduce-next at) mv (pgn-transduce-pre frame)) (pop stack)) (pgn-transduce-move-open move at (pgn-transduce-move-close (pgn-transduce-mv frame) items))
+
+def pgn-transduce-note [stack name value]
+  let [frame (top stack)]
+    match (pgn-transduce-mv frame)
+      case missing (transition (push (pgn-transduce-with frame (pgn-transduce-raw-at frame) missing (pgn-transduce-pre-add (pgn-transduce-pre frame) name value)) (pop stack)) [])
+      case mv (transition (push (pgn-transduce-with frame (pgn-transduce-raw-at frame) (pgn-transduce-annotate mv name value) (pgn-transduce-pre frame)) (pop stack)) [])
+
+def pgn-transduce-element [stack rule]
+  match (transduce-token 0 rule)
+    case missing (transition stack [])
+    case token
+      match (get :name token)
+        case "#SAN" (pgn-transduce-move stack (get :val token))
+        case "#MVN" (pgn-transduce-number stack token)
+        case "#NAG" (pgn-transduce-note stack "nags" (get :val token))
+        case "#CMT" (pgn-transduce-note stack "comments" (get :val token))
+        case "#RMK" (pgn-transduce-note stack "comments" (get :val token))
+        case _ (transition stack [])
+
+; A variation joins the move it follows: the fields held before it are
+; written, the move's variations' array opens if it is not open, and the
+; variation's own object and moves open, on the move's number and side.
+def pgn-transduce-rav-open [stack]
+  let [frame (top stack)]
+    match (pgn-transduce-mv frame)
+      case missing (fail :unstreamable "a variation before its line's first move, whose line's annotations follow the moves in the tree")
+      case [n s fields comments nags closed true]
+        transition (push [:rav [n s] missing [[] [] []]] stack) [object-start (key "moves") array-start]
+      case [n s fields comments nags closed false]
+        let [mv [n s (push "variations" fields) comments nags fields true]]
+          let [items (pipe (pgn-transduce-held fields comments nags closed []) (push (key "variations")) (push array-start) (push object-start) (push (key "moves")) (push array-start))]
+            transition (push [:rav [n s] missing [[] [] []]] (push (pgn-transduce-with frame (pgn-transduce-raw-at frame) mv (pgn-transduce-pre frame)) (pop stack))) items
+
+def pgn-transduce-rav-close [stack]
+  match (top stack)
+    case [:rav at mv pre]
+      transition (pop stack) (push object-end (pgn-transduce-pre-items pre (push array-end (pgn-transduce-move-close mv []))))
+
+; The game's movetext with moves ends: the last move, the moves, then the
+; annotations of the position before the first move. Movetext of
+; annotations only, before a tag section, ends nothing.
+def pgn-transduce-movetext-close [stack]
+  match (top stack)
+    case [:game :moves seen fen at mv pre result]
+      transition (push [:game :closed seen fen at missing [[] [] []] result] (pop stack)) (pgn-transduce-pre-items pre (push array-end (pgn-transduce-move-close mv [])))
+    case _ (transition stack [])
+
+; The game's last close (one that pushes a tag section or movetext is not
+; its last): a game with no move writes its tags' end, its empty moves
+; and its annotations here, then its result and its end.
+def pgn-transduce-game-close [stack rule]
+  match (pgn-transduce-pushes rule)
+    case "tag" (transition stack [])
+    case "movetext" (transition stack [])
+    case _
+      match (top stack)
+        case [:game phase seen fen at mv pre result]
+          let [result2 (match (transduce-token 0 rule) (case missing result) (case t (match (get :name t) (case "#RES" (get :src t)) (case _ result))))]
+            let [items (match phase (case :tags (pgn-transduce-pre-items pre [object-end (key "moves") array-start array-end])) (case _ []))]
+              transition (pop stack) (push object-end (pgn-transduce-pair "result" result2 items))
+
+def pgn-transduce-open [stack rule]
+  match (get :name rule)
+    case "pgn" (transition (push :pgn stack) [array-start])
+    case "game" (pgn-transduce-game-open stack rule)
+    case "tagbody" (pgn-transduce-tag stack rule)
+    case "element" (pgn-transduce-element stack rule)
+    case "rav" (pgn-transduce-rav-open stack)
+    case _ (transition stack [])
+
+def pgn-transduce-close [stack rule]
+  match (get :name rule)
+    case "pgn" (transition (push :done (pop stack)) [array-end])
+    case "movetext" (pgn-transduce-movetext-close stack)
+    case "rav" (pgn-transduce-rav-close stack)
+    case "game" (pgn-transduce-game-close stack rule)
+    case _ (transition stack [])
+
+def pgn-transduce-step [stack pass]
+  match pass
+    case (open rule) (pgn-transduce-open stack rule)
+    case (close rule) (pgn-transduce-close stack rule)
+
+def pgn-transduce-finish [stack]
+  match stack
+    case [] [array-start array-end]
+    case [:done] []
+    case _ (fail :protocol-order "the rule passes ended inside a game, which a database's never do")
+
+; --- Expanding the items ---
+
+def pgn-transduce-comment [c]
+  match (get "commands" c)
+    case missing [object-start (key "kind") (scalar (get "kind" c)) (key "text") (scalar (get "text" c)) object-end]
+    case commands [object-start (key "kind") (scalar (get "kind" c)) (key "text") (scalar (get "text" c)) (key "commands") array-start [:commands commands]]
+
+; An item one level flatter. An event, which every item becomes, passes
+; through on the first test.
+def pgn-transduce-expand [state item]
+  match (kind item)
+    case :vector (pgn-transduce-expand-item state item)
+    case _ (transition state [item])
+
+; A list ends with its closing bracket, and a comment's commands, and a
+; command's arguments, with their object's end too, since a vector can
+; only be extended at its end.
+def pgn-transduce-expand-item [state item]
+  match item
+    case [:kv k missing] (transition state [])
+    case [:kv k v] (transition state [(key k) (scalar v)])
+    case [:move move at] (transition state [object-start [:kv "san" (get "san" move)] [:kv "piece" (get "piece" move)] [:kv "castle" (get "castle" move)] [:disambiguation (get "disambiguation" move)] [:kv "capture" (get "capture" move)] [:kv "to" (get "to" move)] [:kv "promotion" (get "promotion" move)] [:kv "check" (get "check" move)] [:kv "annotation" (get "annotation" move)] [:kv "number" (get-path (path 0) at)] [:kv "side" (get-path (path 1) at)]])
+    case [:disambiguation missing] (transition state [])
+    case [:disambiguation d] (transition state [(key "disambiguation") object-start [:kv "file" (get "file" d)] [:kv "rank" (get "rank" d)] object-end])
+    case [:nags list] (transition state (push array-end (map (fn [g] (scalar g)) list)))
+    case [:comments list] (transition state (push array-end (map (fn [c] [:comment c]) list)))
+    case [:comment c] (transition state (pgn-transduce-comment c))
+    case [:commands list] (transition state (push object-end (push array-end (map (fn [m] [:command m]) list))))
+    case [:command m] (transition state [object-start (key "name") (scalar (get "name" m)) (key "args") array-start [:args (get "args" m)]])
+    case [:args list] (transition state (push object-end (push array-end (map (fn [a] (scalar a)) list))))
+    case e (transition state [e])
+
+def pgn-transduce-flatten [items]
+  scan-emit [] pgn-transduce-expand (fn [state] []) items
+
+def pgn-transduce [input]
+  as-events
+    pipe (scan-emit [] pgn-transduce-step pgn-transduce-finish (parser-events input))
+      pgn-transduce-flatten
+      pgn-transduce-flatten
+      pgn-transduce-flatten
+      pgn-transduce-flatten
+      pgn-transduce-flatten
 ` })
 })
 

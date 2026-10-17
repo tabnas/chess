@@ -454,7 +454,7 @@ pub fn chess(tn: &mut Tabnas, options: &ChessOptions) -> Result<(), PluginError>
             .match_tokens
             .insert(matcher.name.clone(), matcher);
     }
-    for matcher in lex::lex_matchers(&tokens) {
+    for matcher in lex::lex_matchers(&tokens, options.commands) {
         tn.options
             .lex
             .matchers
@@ -782,6 +782,9 @@ pub struct TranslationParts {
     pub embed: Option<TranslationPart>,
     /// An optional render from the write shape to text.
     pub render: Option<TranslationPart>,
+    /// An optional transducer: the format's JSON events from its parser's
+    /// rule passes, for a host that reads parser events.
+    pub transduce: Option<TranslationPart>,
 }
 
 const TRANSLATION: TranslationParts = TranslationParts {
@@ -792,21 +795,29 @@ const TRANSLATION: TranslationParts = TranslationParts {
         entry: "pgn-render",
         source: Some(include_str!("../translate/render.alc")),
     }),
+    transduce: Some(TranslationPart {
+        entry: "pgn-transduce",
+        source: Some(include_str!("../translate/transduce.alc")),
+    }),
 };
 
 /// PGN's translation parts. The manifest's `translate` object says that
 /// PGN is read as and written from a tree of its own shape, the reader's
 /// database of games (the schema `pgn-database`, whose root is an array),
-/// and the render, `pgn-render`, writes that tree back as PGN text. There
-/// is no embed: a host composes a translation into PGN only from PGN itself
-/// or from a program that builds the tree. The texts are the crate's
-/// copies in `translate/` of `tabnas.plugin.json` and `alchemy/render.alc`,
+/// and the render, `pgn-render`, writes that tree back as PGN text. The
+/// transducer part, `pgn-transduce`, gives a database's JSON events from
+/// the grammar's rule passes under its default options, a game at a time,
+/// for a host that reads parser events. There is no embed: a host composes
+/// a translation into PGN only from PGN itself or from a program that
+/// builds the tree. The texts are the crate's copies in `translate/` of
+/// `tabnas.plugin.json`, `alchemy/render.alc` and `alchemy/transduce.alc`,
 /// which `npm run embed` in `ts/` writes and `tests/translate_test.rs`
 /// holds to the files.
 ///
 /// ```
 /// let parts = tabnas_chess::translate().expect("PGN carries translation parts");
 /// assert_eq!(parts.render.map(|part| part.entry), Some("pgn-render"));
+/// assert_eq!(parts.transduce.map(|part| part.entry), Some("pgn-transduce"));
 /// assert!(parts.embed.is_none());
 /// ```
 #[must_use]

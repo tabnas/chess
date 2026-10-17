@@ -650,3 +650,88 @@ fn command_operands_are_trimmed_with_javascripts_class() {
     assert_eq!("x", strip_commands("x\u{FEFF}"));
     assert_eq!("\u{85}x\u{85}", strip_commands("\u{85}x\u{85}"));
 }
+
+/// The tokens of the element rules' opens, each as its name and its value
+/// in JSON.
+fn element_tokens(src: &str, options: &ChessOptions) -> Vec<(String, serde_json::Value)> {
+    use std::sync::{Arc, Mutex};
+    let mut parser = make(options).expect("the grammar installs");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen);
+    parser.subscribe_rule_done(move |rule, _ctx, done| {
+        if !matches!(done.state, tabnas::RuleState::Open) || rule.name.as_str() != "element" {
+            return;
+        }
+        if let Some(token) = rule.o0() {
+            sink.lock()
+                .unwrap()
+                .push((token.name.as_str().to_string(), token.val.to_json()));
+        }
+    });
+    parser
+        .parse(src)
+        .unwrap_or_else(|error| panic!("parse {src:?}: {error}"));
+    drop(parser);
+    let seen = seen.lock().unwrap().clone();
+    seen
+}
+
+/// A reader of the rule passes (a transducer part) sees the tokens and
+/// not the tree, so each token carries the value its text spells: a move
+/// number its number, a move the move taken apart, a glyph its number, a
+/// comment the comment the tree holds, with its commands as the
+/// `commands` option reads them. The engine's numbers are floats, so a
+/// number is `12.0` here. Mirrors `ts/test/chess.test.ts`.
+#[test]
+fn tokens_carry_their_values() {
+    use serde_json::json;
+    let seen = element_tokens(
+        "12... Nbxd7+! $14 {a [%clk 0:01:00]} e8=Q# ; b\n*",
+        &Default::default(),
+    );
+    let want = vec![
+        ("#MVN".to_string(), json!(12.0)),
+        (
+            "#SAN".to_string(),
+            json!({
+                "san": "Nbxd7+", "piece": "N", "disambiguation": {"file": "b"},
+                "capture": true, "to": "d7", "check": "+", "annotation": "!"
+            }),
+        ),
+        ("#NAG".to_string(), json!(14.0)),
+        (
+            "#CMT".to_string(),
+            json!({
+                "kind": "brace", "text": "a [%clk 0:01:00]",
+                "commands": [{"name": "clk", "args": ["0:01:00"]}]
+            }),
+        ),
+        (
+            "#SAN".to_string(),
+            json!({"san": "e8=Q#", "piece": "P", "to": "e8", "promotion": "Q", "check": "#"}),
+        ),
+        ("#RMK".to_string(), json!({"kind": "line", "text": " b"})),
+    ];
+    assert_eq!(seen, want);
+
+    let seen = element_tokens(
+        "e4 {[%clk 0:01:00]} *",
+        &ChessOptions {
+            commands: false,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        seen,
+        vec![
+            (
+                "#SAN".to_string(),
+                json!({"san": "e4", "piece": "P", "to": "e4"})
+            ),
+            (
+                "#CMT".to_string(),
+                json!({"kind": "brace", "text": "[%clk 0:01:00]"})
+            ),
+        ]
+    );
+}
