@@ -727,7 +727,12 @@ func lineFrom(src string, start int) string {
 	return src[start:end]
 }
 
-func makeCommentMatcher(tin tabnas.Tin) tabnas.MakeLexMatcher {
+// A comment's token carries the comment the tree holds, its `[%…]`
+// commands read as the `commands` option says, so a reader of the rule
+// passes (a transducer part) has it without the action that files it.
+// The value is lazy, a TokenValFunc that builds it when a reader resolves
+// it, so a parse that reads only the tree pays nothing for it.
+func makeCommentMatcher(tin tabnas.Tin, commands bool) tabnas.MakeLexMatcher {
 	return func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
 		return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 			pnt := lex.Cursor()
@@ -743,14 +748,14 @@ func makeCommentMatcher(tin tabnas.Tin) tabnas.MakeLexMatcher {
 			end := pnt.SI + 1 + rel
 
 			tsrc := src[pnt.SI : end+1]
-			tkn := lex.Token("#CMT", tin, tsrc[1:len(tsrc)-1], tsrc)
+			tkn := lex.Token("#CMT", tin, commentValueOf("brace", tsrc[1:len(tsrc)-1], commands), tsrc)
 			advance(pnt, tsrc)
 			return tkn
 		}
 	}
 }
 
-func makeRemarkMatcher(tin tabnas.Tin) tabnas.MakeLexMatcher {
+func makeRemarkMatcher(tin tabnas.Tin, commands bool) tabnas.MakeLexMatcher {
 	return func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
 		return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 			pnt := lex.Cursor()
@@ -760,7 +765,7 @@ func makeRemarkMatcher(tin tabnas.Tin) tabnas.MakeLexMatcher {
 			}
 
 			tsrc := lineFrom(src, pnt.SI)
-			tkn := lex.Token("#RMK", tin, tsrc[1:], tsrc)
+			tkn := lex.Token("#RMK", tin, commentValueOf("line", tsrc[1:], commands), tsrc)
 			advance(pnt, tsrc)
 			return tkn
 		}
@@ -798,12 +803,19 @@ func makeEscapeMatcher() tabnas.MakeLexMatcher {
 // stays a regexp.
 
 // tokenAt runs re at the cursor and, if accept agrees, emits a token of
-// exactly the accepted length.
+// exactly the accepted length, whose value is what value makes of its
+// text (nil when value is nil). A move, a move number and a glyph carry
+// the value their text spells, for a reader of the rule passes (a
+// transducer part), which sees the tokens and not the tree; the actions
+// read the tree's values from the source as before. A move's value is
+// lazy, a TokenValFunc that takes the move apart when a reader resolves
+// it, so a parse that reads only the tree pays nothing for it.
 func tokenAt(
 	name string,
 	tin tabnas.Tin,
 	re *regexp.Regexp,
 	accept func(src string, start int, m []string) (string, bool),
+	value func(tsrc string) any,
 ) tabnas.LexMatcher {
 	return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 		pnt := lex.Cursor()
@@ -818,7 +830,11 @@ func tokenAt(
 		if !ok || "" == tsrc {
 			return nil
 		}
-		tkn := lex.Token(name, tin, nil, tsrc)
+		var val any
+		if nil != value {
+			val = value(tsrc)
+		}
+		tkn := lex.Token(name, tin, val, tsrc)
 		advance(pnt, tsrc)
 		return tkn
 	}
@@ -827,6 +843,10 @@ func tokenAt(
 func makeSanMatcher(tin tabnas.Tin, re *regexp.Regexp) tabnas.LexMatcher {
 	return tokenAt("#SAN", tin, re, func(src string, start int, m []string) (string, bool) {
 		return m[0], endsToken(src, start+len(m[0]), "")
+	}, func(tsrc string) any {
+		return tabnas.TokenValFunc(func(*tabnas.Rule, *tabnas.Context) any {
+			return moveValue(decompose(re, tsrc))
+		})
 	})
 }
 
@@ -840,7 +860,7 @@ func makeMoveNumberMatcher(tin tabnas.Tin) tabnas.LexMatcher {
 			return m[0], true
 		}
 		return m[0], endsToken(src, start+len(m[0]), "/")
-	})
+	}, func(tsrc string) any { return leadingNumber(tsrc) })
 }
 
 // Three of the four markers are symbol tokens and so must end at a
@@ -853,7 +873,7 @@ func makeResultMatcher(tin tabnas.Tin) tabnas.LexMatcher {
 			return m[0], true
 		}
 		return m[0], endsToken(src, start+len(m[0]), "/")
-	})
+	}, nil)
 }
 
 // 8.2.4: a glyph value is from zero to 255. Import format is not fussy
@@ -865,7 +885,7 @@ func makeNagMatcher(tin tabnas.Tin, strict bool) tabnas.LexMatcher {
 	if !strict {
 		return tokenAt("#NAG", tin, nag, func(_ string, _ int, m []string) (string, bool) {
 			return m[0], true
-		})
+		}, nagValue)
 	}
 	return tokenAt("#NAG", tin, nagStrict, func(src string, start int, m []string) (string, bool) {
 		end := start + len(m[0])
@@ -873,7 +893,70 @@ func makeNagMatcher(tin tabnas.Tin, strict bool) tabnas.LexMatcher {
 			return "", false
 		}
 		return m[0], true
-	})
+	}, nagValue)
+}
+
+// nagValue is a glyph's number, the digits after its `$`.
+func nagValue(tsrc string) any { return atoi(tsrc[1:]) }
+
+// leadingNumber is a move number's digits, before any space or period.
+func leadingNumber(src string) int {
+	digits := 0
+	for digits < len(src) && '0' <= src[digits] && src[digits] <= '9' {
+		digits++
+	}
+	return atoi(src[:digits])
+}
+
+// moveValue is a move as a token carries it: the fields its text states,
+// as a plain map, since a reader of the rule passes takes a token's
+// value as data, not as a Go type.
+func moveValue(m *Move) map[string]any {
+	v := map[string]any{"san": m.San, "piece": m.Piece}
+	if nil != m.Disambiguation {
+		d := map[string]any{}
+		if "" != m.Disambiguation.File {
+			d["file"] = m.Disambiguation.File
+		}
+		if 0 != m.Disambiguation.Rank {
+			d["rank"] = m.Disambiguation.Rank
+		}
+		v["disambiguation"] = d
+	}
+	if m.Capture {
+		v["capture"] = true
+	}
+	for k, f := range map[string]string{"to": m.To, "promotion": m.Promotion, "castle": m.Castle, "check": m.Check, "annotation": m.Annotation} {
+		if "" != f {
+			v[k] = f
+		}
+	}
+	return v
+}
+
+// commentValueOf is a comment's token value: the comment as a plain map,
+// built when a reader of the rule passes resolves it.
+func commentValueOf(kind, text string, commands bool) tabnas.TokenValFunc {
+	return func(*tabnas.Rule, *tabnas.Context) any {
+		return commentValue(makeComment(kind, text, commands))
+	}
+}
+
+// commentValue is a comment as a token carries it, as a plain map.
+func commentValue(c *Comment) map[string]any {
+	v := map[string]any{"kind": c.Kind, "text": c.Text}
+	if 0 < len(c.Commands) {
+		commands := make([]any, len(c.Commands))
+		for i, command := range c.Commands {
+			args := make([]any, len(command.Args))
+			for j, arg := range command.Args {
+				args[j] = arg
+			}
+			commands[i] = map[string]any{"name": command.Name, "args": args}
+		}
+		v["commands"] = commands
+	}
+	return v
 }
 
 func badToken(lex *tabnas.Lex, code, src string, start, end int) *tabnas.Token {
@@ -1153,11 +1236,7 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 		"@number": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
 			c := counter(current(r, ctx))
 			src := r.O0.Src
-			digits := 0
-			for digits < len(src) && '0' <= src[digits] && src[digits] <= '9' {
-				digits++
-			}
-			c.number = atoi(src[:digits])
+			c.number = leadingNumber(src)
 			dots := strings.Count(src, ".")
 			if 1 == dots {
 				c.side = "w"
@@ -1171,11 +1250,12 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 		}),
 
 		"@brace-comment": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
-			annotateComment(lineOf(r, ctx), makeComment("brace", fmt.Sprint(r.O0.Val), commands))
+			src := r.O0.Src
+			annotateComment(lineOf(r, ctx), makeComment("brace", src[1:len(src)-1], commands))
 		}),
 
 		"@line-comment": tabnas.AltAction(func(r *tabnas.Rule, ctx *tabnas.Context) {
-			annotateComment(lineOf(r, ctx), makeComment("line", fmt.Sprint(r.O0.Val), commands))
+			annotateComment(lineOf(r, ctx), makeComment("line", r.O0.Src[1:], commands))
 		}),
 
 		// A variation replaces the move it follows, so it starts on that
@@ -1396,8 +1476,8 @@ func Chess(j *tabnas.Tabnas, options map[string]any) error {
 
 		Lex: &tabnas.LexOptions{
 			Match: map[string]*tabnas.MatchSpec{
-				"pgnComment": {Order: 1200000, Make: makeCommentMatcher(tCMT)},
-				"pgnRemark":  {Order: 1300000, Make: makeRemarkMatcher(tRMK)},
+				"pgnComment": {Order: 1200000, Make: makeCommentMatcher(tCMT, o.commands())},
+				"pgnRemark":  {Order: 1300000, Make: makeRemarkMatcher(tRMK, o.commands())},
 				"pgnEscape":  {Order: 1500000, Make: makeEscapeMatcher()},
 			},
 			EmptyResult: &Database{},

@@ -45,7 +45,10 @@ use serde::Serialize;
 use tabnas::{Context, MapRef, Tabnas, Value};
 
 use crate::commands::{js_space, scan_commands};
-use crate::model::{Comment, CommentKind, GameResult, Move, Side};
+use crate::model::{
+    Annotation, CastleSide, CheckIndicator, Comment, CommentKind, GameResult, Move, Piece,
+    PromotionPiece, Side,
+};
 use crate::san::build_move;
 
 // --- Node helpers --------------------------------------------------------
@@ -125,7 +128,7 @@ fn new_game() -> Value {
     map_ref(value)
 }
 
-fn to_value<T: Serialize>(item: &T) -> Value {
+pub(crate) fn to_value<T: Serialize>(item: &T) -> Value {
     Value::from_json(&serde_json::to_value(item).expect("the model always serialises"))
 }
 
@@ -278,7 +281,7 @@ fn text_of(value: &Value) -> Option<String> {
     }
 }
 
-fn make_comment(kind: CommentKind, text: String, parse: bool) -> Comment {
+pub(crate) fn make_comment(kind: CommentKind, text: String, parse: bool) -> Comment {
     let commands = if parse {
         scan_commands(&text).0
     } else {
@@ -293,7 +296,7 @@ fn make_comment(kind: CommentKind, text: String, parse: bool) -> Comment {
 
 /// Take a lexed SAN token apart. The `None` arm is unreachable: the token
 /// was cut by this very pattern, so it matches by construction.
-fn decompose(pattern: &Regex, src: &str) -> Move {
+pub(crate) fn decompose(pattern: &Regex, src: &str) -> Move {
     match pattern.captures(src) {
         Some(captures) => build_move(&captures, src),
         None => Move {
@@ -410,14 +413,12 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
 
     let san = pattern.clone();
     tn.action_with_context("@move", move |rule, context| {
-        let Some(src) = rule.o0().map(|token| token.src.as_str().to_string()) else {
+        let Some(token) = rule.o0().map(|token| move_of(&san, token)) else {
             return Ok(());
         };
-        let mut played = decompose(&san, &src);
         with_line(rule, context, |line| {
             let count = counter(line);
-            played.number = Some(count.number);
-            played.side = Some(count.side);
+            let played = numbered(&token, count);
             set_count(
                 line,
                 match count.side {
@@ -436,17 +437,16 @@ pub(crate) fn register(tn: &mut Tabnas, san: Regex, commands: bool) {
                     },
                 },
             );
-            push_move(line, to_value(&played));
+            push_move(line, played);
         });
         Ok(())
     });
 
     let san = pattern.clone();
     tn.action_with_context("@bare-move", move |rule, _context| {
-        let Some(src) = rule.o0().map(|token| token.src.as_str().to_string()) else {
+        let Some(played) = rule.o0().map(|token| move_of(&san, token)) else {
             return Ok(());
         };
-        let played = to_value(&decompose(&san, &src));
         rule.node = Rc::new(RefCell::new(played));
         Ok(())
     });
@@ -560,12 +560,192 @@ fn set_result(rule: &tabnas::Rule, context: &mut Context, marker: Option<String>
     });
 }
 
+/// The move a token carries: the matcher took the move apart once, and
+/// the token's object is shared, so this costs a reference count. A token
+/// with no object, which the matcher never makes, is taken apart from its
+/// source.
+fn move_of(san: &Regex, token: &tabnas::Token) -> Value {
+    match &token.val {
+        Value::Object(_) => token.val.clone(),
+        _ => move_value(&decompose(san, token.src.as_str())),
+    }
+}
+
+/// The tree's move: the token's fields, then its number and side, in a
+/// map of its own, so the token's value stays as the passes showed it.
+fn numbered(played: &Value, count: Count) -> Value {
+    let Value::Object(stated) = played else {
+        return played.clone();
+    };
+    let mut fields = IndexMap::with_capacity(stated.len() + 2);
+    fields.extend(stated.iter().map(|(k, v)| (k.clone(), v.clone())));
+    fields.insert("number".to_string(), Value::Number(count.number as f64));
+    fields.insert("side".to_string(), text(count.side.as_str()));
+    Value::object(fields)
+}
+
+fn text(value: &str) -> Value {
+    Value::String(value.to_string())
+}
+
+/// A move as its token carries it: the fields its text states, in the
+/// order the model serialises them, built straight into the engine's
+/// value, since the matcher makes one for every move a document holds.
+/// `the_values_are_the_models` holds it to `to_value`.
+pub(crate) fn move_value(played: &Move) -> Value {
+    let mut fields = IndexMap::with_capacity(9);
+    fields.insert("san".to_string(), text(&played.san));
+    let piece = match played.piece {
+        Piece::P => "P",
+        Piece::N => "N",
+        Piece::B => "B",
+        Piece::R => "R",
+        Piece::Q => "Q",
+        Piece::K => "K",
+    };
+    fields.insert("piece".to_string(), text(piece));
+    if let Some(origin) = &played.disambiguation {
+        let mut stated = IndexMap::with_capacity(2);
+        if let Some(file) = &origin.file {
+            stated.insert("file".to_string(), text(file));
+        }
+        if let Some(rank) = origin.rank {
+            stated.insert("rank".to_string(), Value::Number(f64::from(rank)));
+        }
+        fields.insert("disambiguation".to_string(), Value::object(stated));
+    }
+    if played.capture {
+        fields.insert("capture".to_string(), Value::Bool(true));
+    }
+    if let Some(to) = &played.to {
+        fields.insert("to".to_string(), text(to));
+    }
+    if let Some(promotion) = played.promotion {
+        let letter = match promotion {
+            PromotionPiece::N => "N",
+            PromotionPiece::B => "B",
+            PromotionPiece::R => "R",
+            PromotionPiece::Q => "Q",
+        };
+        fields.insert("promotion".to_string(), text(letter));
+    }
+    if let Some(castle) = played.castle {
+        let side = match castle {
+            CastleSide::King => "king",
+            CastleSide::Queen => "queen",
+        };
+        fields.insert("castle".to_string(), text(side));
+    }
+    if let Some(check) = played.check {
+        let mark = match check {
+            CheckIndicator::Check => "+",
+            CheckIndicator::Mate => "#",
+        };
+        fields.insert("check".to_string(), text(mark));
+    }
+    if let Some(annotation) = played.annotation {
+        let suffix = match annotation {
+            Annotation::Good => "!",
+            Annotation::Poor => "?",
+            Annotation::VeryGood => "!!",
+            Annotation::VeryPoor => "??",
+            Annotation::Speculative => "!?",
+            Annotation::Questionable => "?!",
+        };
+        fields.insert("annotation".to_string(), text(suffix));
+    }
+    Value::object(fields)
+}
+
+/// A comment as its token carries it, built straight into the engine's
+/// value; `the_values_are_the_models` holds it to `to_value`.
+pub(crate) fn comment_value(comment: &Comment) -> Value {
+    let mut fields = IndexMap::with_capacity(3);
+    let kind = match comment.kind {
+        CommentKind::Brace => "brace",
+        CommentKind::Line => "line",
+    };
+    fields.insert("kind".to_string(), text(kind));
+    fields.insert("text".to_string(), text(&comment.text));
+    if !comment.commands.is_empty() {
+        let commands = comment
+            .commands
+            .iter()
+            .map(|command| {
+                let mut entry = IndexMap::with_capacity(2);
+                entry.insert("name".to_string(), text(&command.name));
+                let args = command.args.iter().map(|arg| text(arg)).collect();
+                entry.insert("args".to_string(), Value::array(args));
+                Value::object(entry)
+            })
+            .collect();
+        fields.insert("commands".to_string(), Value::array(commands));
+    }
+    Value::object(fields)
+}
+
+/// The token's value is the comment as the tree holds it, its commands
+/// read as the `commands` option says, so the tree shares it; a token
+/// with no object, which the matcher never makes, is read from its
+/// source, its braces or its semicolon cut off, as the matcher cut them.
 fn comment_action(rule: &tabnas::Rule, context: &mut Context, kind: CommentKind, commands: bool) {
-    let Some(text) = rule.o0().and_then(|token| text_of(&token.val)) else {
+    let Some(token) = rule.o0() else {
         return;
     };
-    let comment = make_comment(kind, text, commands);
-    with_line(rule, context, |line| {
-        annotate(line, "comments", to_value(&comment))
-    });
+    let comment = match &token.val {
+        Value::Object(_) => token.val.clone(),
+        _ => {
+            let src = token.src.as_str();
+            let text = match kind {
+                CommentKind::Brace => src.get(1..src.len().saturating_sub(1)),
+                CommentKind::Line => src.get(1..),
+            };
+            let Some(text) = text.map(str::to_string) else {
+                return;
+            };
+            comment_value(&make_comment(kind, text, commands))
+        }
+    };
+    with_line(rule, context, |line| annotate(line, "comments", comment));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::san::san_pattern;
+
+    /// The values the matchers build are what serialising the model gives,
+    /// field for field and in the same order, for every kind of move and
+    /// comment.
+    #[test]
+    fn the_values_are_the_models() {
+        let san = san_pattern(false);
+        for src in [
+            "e4", "exd5", "Nf3", "Nbd7", "N1f3", "Qh4xe1", "R1a3+", "Nbxd7+!", "O-O", "O-O-O#",
+            "exd8=Q+", "e8=N??", "e8Q", "Ke2!?", "Bb5?!", "a1=R!!", "Pe4",
+        ] {
+            let played = decompose(&san, src);
+            assert_eq!(move_value(&played), to_value(&played), "{src}");
+            assert_eq!(
+                move_value(&played).to_string(),
+                to_value(&played).to_string(),
+                "{src}"
+            );
+        }
+        for (kind, text) in [
+            (CommentKind::Brace, "a [%clk 0:01:00] [%cal Ge2e4,Rd7d5] b"),
+            (CommentKind::Line, " plain"),
+            (CommentKind::Brace, "[%emt]"),
+        ] {
+            for commands in [true, false] {
+                let comment = make_comment(kind, text.to_string(), commands);
+                assert_eq!(comment_value(&comment), to_value(&comment), "{text}");
+                assert_eq!(
+                    comment_value(&comment).to_string(),
+                    to_value(&comment).to_string(),
+                    "{text}"
+                );
+            }
+        }
+    }
 }

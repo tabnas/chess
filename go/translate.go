@@ -16,6 +16,9 @@ type TranslationParts struct {
 	Lift     *TranslationPart
 	Embed    *TranslationPart
 	Render   *TranslationPart
+	// Transduce is the transducer part: the format's JSON events from its
+	// parser's rule passes, for a host that reads parser events.
+	Transduce *TranslationPart
 }
 
 //go:embed translate/manifest.json
@@ -24,17 +27,24 @@ var translationManifest string
 //go:embed translate/render.alc
 var translationRender string
 
+//go:embed translate/transduce.alc
+var translationTransduce string
+
 var translationParts = TranslationParts{
-	Manifest: translationManifest,
-	Render:   &TranslationPart{Entry: "pgn-render", Source: translationRender},
+	Manifest:  translationManifest,
+	Render:    &TranslationPart{Entry: "pgn-render", Source: translationRender},
+	Transduce: &TranslationPart{Entry: "pgn-transduce", Source: translationTransduce},
 }
 
 // Translate returns PGN's immutable translation parts: the manifest, whose
 // translate object says PGN is read as and written from the reader's own
 // tree (the schema pgn-database, an array of games at the root), and the
-// render, pgn-render, which writes that tree back as PGN text. There is no
-// embed, so a host composes a translation into PGN only from PGN itself or
-// from a program that builds the tree.
+// render, pgn-render, which writes that tree back as PGN text, and the
+// transducer part, pgn-transduce, which gives a database's JSON events from
+// the grammar's rule passes under its default options, a game at a time,
+// for a host that reads parser events. There is no embed, so a host
+// composes a translation into PGN only from PGN itself or from a program
+// that builds the tree.
 // Each call returns a copy of its own, so that what one caller changes
 // is not what another reads.
 func Translate() *TranslationParts {
@@ -42,6 +52,7 @@ func Translate() *TranslationParts {
 	parts.Lift = copyPart(parts.Lift)
 	parts.Embed = copyPart(parts.Embed)
 	parts.Render = copyPart(parts.Render)
+	parts.Transduce = copyPart(parts.Transduce)
 	return &parts
 }
 

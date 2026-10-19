@@ -434,3 +434,61 @@ func TestParseIsRaceFreeOnFirstUse(t *testing.T) {
 }
 
 var errCount = errors.New("expected exactly one game")
+
+// A reader of the rule passes (a transducer part) sees the tokens and not
+// the tree, so each token carries the value its text spells: a move number
+// its number, a move the move taken apart, a glyph its number, a comment
+// the comment the tree holds, with its commands as the Commands option
+// reads them. The values are plain maps and slices, since a reader takes
+// a token's value as data, not as a Go type, and a move's and a comment's
+// are lazy, built when a reader resolves them (Token.ResolveVal), as the
+// parser event source does. Mirrors ts/test/chess.test.ts.
+func TestTokensCarryTheirValues(t *testing.T) {
+	tokens := func(src string, opts ...Options) []any {
+		t.Helper()
+		j := Make(opts...)
+		var seen []any
+		j.SubRuleDone(func(rule *tabnas.Rule, ctx *tabnas.Context, done tabnas.RuleDone) {
+			if "o" != done.State || "element" != rule.Name || nil == rule.O0 {
+				return
+			}
+			seen = append(seen, []any{rule.O0.Name, rule.O0.ResolveVal(rule, ctx)})
+		})
+		if _, err := j.Parse(src); nil != err {
+			t.Fatalf("Parse(%q): %v", src, err)
+		}
+		return seen
+	}
+
+	t.Run("a move, a move number, a glyph and a comment carry their values", func(t *testing.T) {
+		got := tokens("12... Nbxd7+! $14 {a [%clk 0:01:00]} e8=Q# ; b\n*")
+		want := []any{
+			[]any{"#MVN", 12},
+			[]any{"#SAN", map[string]any{
+				"san": "Nbxd7+", "piece": "N", "disambiguation": map[string]any{"file": "b"},
+				"capture": true, "to": "d7", "check": "+", "annotation": "!",
+			}},
+			[]any{"#NAG", 14},
+			[]any{"#CMT", map[string]any{
+				"kind": "brace", "text": "a [%clk 0:01:00]",
+				"commands": []any{map[string]any{"name": "clk", "args": []any{"0:01:00"}}},
+			}},
+			[]any{"#SAN", map[string]any{"san": "e8=Q#", "piece": "P", "to": "e8", "promotion": "Q", "check": "#"}},
+			[]any{"#RMK", map[string]any{"kind": "line", "text": " b"}},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got  %#v\nwant %#v", got, want)
+		}
+	})
+
+	t.Run("a comment's token reads its commands as the option says", func(t *testing.T) {
+		got := tokens("e4 {[%clk 0:01:00]} *", Options{CommandsSet: true})
+		want := []any{
+			[]any{"#SAN", map[string]any{"san": "e4", "piece": "P", "to": "e4"}},
+			[]any{"#CMT", map[string]any{"kind": "brace", "text": "[%clk 0:01:00]"}},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got  %#v\nwant %#v", got, want)
+		}
+	})
+}

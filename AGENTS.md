@@ -124,7 +124,8 @@ an inferred field would make the parser a chess engine, and a bad one.
 | [`chess-grammar.jsonic`](chess-grammar.jsonic) | **Single source of truth** for the rule table, authored in jsonic so it can carry comments. |
 | [`ts/embed-grammar.js`](ts/embed-grammar.js) | Converts the grammar to JSON and embeds it in **all three** of `ts/src/chess.ts`, `go/chess.go` and `rs/src/lib.rs`, between `BEGIN/END EMBEDDED` markers. Runs as the first half of `npm run build`. `@tabnas/jsonic` is a **build-time** dependency only; no runtime parses jsonic at run time. |
 | [`alchemy/render.alc`](alchemy/render.alc) | **PGN's render**, an [alchemy](https://github.com/tabnas/alchemy) library whose entry point `pgn-render` writes the reader's database of games back as PGN text that reads back as the same tree: tag pairs, then movetext with move numbers as the export format writes them, comments, glyphs, variations and the result, in lines of at most 79 characters, the parentheses of a variation each on the line it opens or closes when that line has room and on a line of its own otherwise. A game with no result that the reader would read the next game into is written with the termination marker `*`, a convention the manifest's loss lines state. A line's own annotations come after its moves in the tree and before them in the text, so the render holds a game's movetext until the game ends. [`test/spec/render.tsv`](test/spec/render.tsv) pins documents the render wrote and what every reader reads from them. The manifest's `translate` object in [`tabnas.plugin.json`](tabnas.plugin.json) names it, names the tree it writes (`schema`: `pgn-database`, an array of games at the root, `root`), names no embed (a plain tree has no PGN form, so a host composes a translation into PGN only from PGN itself or from a program that builds the tree), and says what a written document does not keep (`loss`). `languageId` is `pgn`: the reader reads PGN, and SAN only inside it. The round trip that runs the render needs alchemy, which this repository does not depend on. |
-| [`ts/embed-translate.js`](ts/embed-translate.js) | Copies the manifest and the render into every runtime: `ts/src/translate.ts` (generated, exported as `translate()`), `go/translate/` (`go:embed`, `Translate()` in `go/translate.go`) and `rs/translate/` (`include_str!`, `translate()` in `rs/src/lib.rs`). Runs in `npm run embed`, after `embed-grammar.js`; `ts/test/translate.test.ts`, `go/translate_test.go` and `rs/tests/translate_test.rs` hold the copies to the files, so change the files at the root and run the embed. |
+| [`alchemy/transduce.alc`](alchemy/transduce.alc) | **PGN's transducer part**, an alchemy library whose entry point `pgn-transduce` gives a database's JSON events from the grammar's rule passes under its default options, the events the walk of the parse's value gives, a game at a time, for a host that reads parser events (alchemy-cli's `translate` and `run --grammar pgn`). The passes carry no game, since a game is built on a stack (below), so the part reads the tokens, which carry what their text spells (below), and counts the moves as the grammar does, from a FEN tag, the move numbers and their periods. A move's annotations are held until the move closes, since a later one may join the list of an earlier one; a variation is written in place, as it arrives. What the tree orders otherwise it refuses in its own words with `fail :unstreamable`, and the host reads the document whole: an annotation after a variation that joins a list begun before it, a variation before its line's first move, and a FEN tag holding a character outside printable ASCII or a move number with a leading zero or of more than fifteen digits. The manifest's `translate.transduce` names it. alchemy's `test/spec/transduce.tsv` pins its events, and alchemy-cli runs it, in all three runtimes. |
+| [`ts/embed-translate.js`](ts/embed-translate.js) | Copies the manifest, the render and the transducer part into every runtime: `ts/src/translate.ts` (generated, exported as `translate()`), `go/translate/` (`go:embed`, `Translate()` in `go/translate.go`) and `rs/translate/` (`include_str!`, `translate()` in `rs/src/lib.rs`). Runs in `npm run embed`, after `embed-grammar.js`; `ts/test/translate.test.ts`, `go/translate_test.go` and `rs/tests/translate_test.rs` hold the copies to the files, so change the files at the root and run the embed. |
 | [`ts/`](ts/) | **Canonical** TypeScript implementation — the `@tabnas/chess` package. Plugin in `src/chess.ts`. Peer-depends on `@tabnas/parser`. |
 | [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
 | [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`), published to crates.io. The engine crate is on crates.io too, as `tabnas-parser`, but the committed manifest stays path-only: the engine is a **path dependency on a sibling checkout** of `tabnas/parser`, `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`, which `crates-release.yml` rewrites into a crates.io requirement when it publishes. See [`rs/README.md`](rs/README.md). |
@@ -165,6 +166,21 @@ an inferred field would make the parser a chess engine, and a bad one.
   values must not be able to disagree. `strict` builds a narrower regex from
   the same template for the same reason.
 
+- **A token carries what its text spells.** A move's token carries the
+  move taken apart by the match that cut it, a move number's and a
+  glyph's their numbers, a comment's the comment with its commands as the
+  `commands` option reads them. A reader of the rule passes (the
+  transducer part) sees the tokens and not the tree, so this is the only
+  way the passes show a move. In TypeScript and Rust the actions take the
+  tree's move and comment from the token, as a copy, since an action adds
+  the move's number and side and the passes show the token as the lexer
+  made it; that is cheaper than taking the move apart twice. In Go the
+  tree is typed, so the actions still read the source, and a move's and a
+  comment's token values are lazy (`tabnas.TokenValFunc`), plain maps built
+  only when a reader resolves them (`Token.ResolveVal`, as transduce's
+  parser event source does), so a parse that reads only the tree pays
+  nothing for them. Each runtime's suite has a test of the tokens.
+
 - **The symbol-tail guard is load-bearing.** Without it the SAN pattern
   matches the `e2` prefix of `e2e4` and the parse silently yields two
   moves — the worst possible outcome, worse than an error. Section 7 says
@@ -195,7 +211,9 @@ an inferred field would make the parser a chess engine, and a bad one.
   close and walks one that arrives complete) read a database a game at
   a time. Never give `game`, `rav` or any rule inside them a node of its
   own: the adapter would start streaming it before its annotations and
-  result arrive. `rs/tests/stream_test.rs`, `ts/test/stream.test.ts` and
+  result arrive. The same shape is why the transducer part is
+  hand-written: no pass carries a game, so the part rebuilds it from the
+  tokens on a stack of its own. `rs/tests/stream_test.rs`, `ts/test/stream.test.ts` and
   `go/stream_test.go` hold all three ports to it. A `game` or `movetext`
   that is the start rule has no database to join: the line it builds is
   its node, which the actions write into whenever the stack is empty.

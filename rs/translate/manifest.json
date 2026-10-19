@@ -33,6 +33,7 @@
     "root": "array",
     "schema": "pgn-database",
     "render": "alchemy/render.alc",
+    "transduce": "alchemy/transduce.alc",
     "loss": [
       "Layout is not kept: each tag pair is written on a line of its own, a blank line comes before a game's movetext and between two games, and the movetext is broken into lines of at most 79 characters where its tokens allow.",
       "Move numbers are written as PGN's export format writes them, before each white move and before each black move but one that follows the white move of its number with no comment or variation between, so the document's own move numbers are not kept; a move number of more than nine digits, which the reader counts from a FEN tag, is not written, and the count gives it again.",

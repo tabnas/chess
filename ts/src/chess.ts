@@ -618,7 +618,10 @@ function buildMove(m: RegExpExecArray): Move {
 // same thing wherever they appear, and a hand-written matcher can keep the
 // row/column counters honest across the newlines they may span.
 
-function makeCommentMatcher() {
+// A comment's token carries the comment the tree holds, its `[%…]`
+// commands read as the `commands` option says, so a reader of the rule
+// passes (a transducer part) has it without the action that files it.
+function makeCommentMatcher(commands: boolean) {
   return function pgnComment(lex: any) {
     const pnt = lex.pnt
     if ('{' !== lex.src[pnt.sI]) return undefined
@@ -627,19 +630,24 @@ function makeCommentMatcher() {
     if (-1 === end) return lex.bad('unterminated_comment', pnt.sI, lex.src.length)
 
     const src = lex.src.substring(pnt.sI, end + 1)
-    const tkn = lex.token('#CMT', src.substring(1, src.length - 1), src, pnt)
+    const tkn = lex.token(
+      '#CMT',
+      makeComment('brace', src.substring(1, src.length - 1), commands),
+      src,
+      pnt,
+    )
     advance(pnt, src)
     return tkn
   }
 }
 
-function makeRemarkMatcher() {
+function makeRemarkMatcher(commands: boolean) {
   return function pgnRemark(lex: any) {
     const pnt = lex.pnt
     if (';' !== lex.src[pnt.sI]) return undefined
 
     const src = lineFrom(lex.src, pnt.sI)
-    const tkn = lex.token('#RMK', src.substring(1), src, pnt)
+    const tkn = lex.token('#RMK', makeComment('line', src.substring(1), commands), src, pnt)
     advance(pnt, src)
     return tkn
   }
@@ -656,6 +664,33 @@ function makeEscapeMatcher() {
     // #CM is in the IGNORE token set, so the parser never sees it.
     const tkn = lex.token('#CM', undefined, src, pnt)
     advance(pnt, src)
+    return tkn
+  }
+}
+
+// --- Gated matchers that carry a value ----------------------------------
+
+// A move, a move number and a glyph are match tokens, gated by the token
+// columns like any other, but each token carries the value its text
+// spells: the move taken apart by the pattern that cut it (`buildMove`),
+// the move number, the glyph's number, for a reader of the rule passes (a
+// transducer part), which sees the tokens and not the tree. The move
+// actions take the tree's move from the token, as a copy (`copyMove`), so
+// a move is taken apart once; the number and glyph actions read the
+// source.
+function makeValueMatcher(
+  name: string,
+  pattern: RegExp,
+  value: (m: RegExpExecArray) => any,
+) {
+  return function pgnValueToken(lex: any) {
+    const m = pattern.exec(lex.refwd())
+    if (null == m || 0 === m[0].length) return undefined
+    const pnt = lex.pnt
+    const src = m[0]
+    const tkn = lex.token(name, value(m), src, pnt)
+    pnt.sI += src.length
+    pnt.cI += src.length
     return tkn
   }
 }
@@ -768,6 +803,24 @@ function annotate(line: Line | undefined, field: 'nags' | 'comments', value: any
     ; (target[field] = target[field] || []).push(value)
 }
 
+// The tree's own copy of the move a token carries: the action adds the
+// move's number and side, and the token's value stays what the rule
+// passes showed.
+function copyMove(move: Move): Move {
+  const copy: Move = { ...move }
+  if (null != move.disambiguation) copy.disambiguation = { ...move.disambiguation }
+  return copy
+}
+
+// The tree's own copy of the comment a token carries.
+function copyComment(comment: Comment): Comment {
+  const copy: Comment = { ...comment }
+  if (null != comment.commands) {
+    copy.commands = comment.commands.map((command) => ({ ...command, args: [...command.args] }))
+  }
+  return copy
+}
+
 function makeComment(kind: 'brace' | 'line', text: string, parse: boolean): Comment {
   const comment: Comment = { kind, text }
   if (parse) {
@@ -777,7 +830,7 @@ function makeComment(kind: 'brace' | 'line', text: string, parse: boolean): Comm
   return comment
 }
 
-function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
+function refs(): Record<FuncRef, Function> {
   return {
     '@pgn-bo': (r: Rule) => {
       r.node = [] as Database
@@ -848,7 +901,7 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
       const line = lineOf(r, ctx)
       if (null == line) return
       const count = counter(line)
-      const move = decompose(san, r.o0, ctx)
+      const move = copyMove(r.o0.val)
       move.number = count.number
       move.side = count.side
       if ('w' === count.side) {
@@ -861,7 +914,7 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
     },
 
     '@bare-move': (r: Rule, ctx: Context) => {
-      r.node = decompose(san, r.o0, ctx)
+      r.node = copyMove(r.o0.val)
     },
 
     // PGN spec 8.2.2: the integer is the fullmove number of the move that
@@ -884,11 +937,11 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
     },
 
     '@brace-comment': (r: Rule, ctx: Context) => {
-      annotate(lineOf(r, ctx), 'comments', makeComment('brace', r.o0.val, commands))
+      annotate(lineOf(r, ctx), 'comments', copyComment(r.o0.val))
     },
 
     '@line-comment': (r: Rule, ctx: Context) => {
-      annotate(lineOf(r, ctx), 'comments', makeComment('line', r.o0.val, commands))
+      annotate(lineOf(r, ctx), 'comments', copyComment(r.o0.val))
     },
 
     // A variation replaces the move it follows, so it starts on that
@@ -921,15 +974,6 @@ function refs(san: RegExp, commands: boolean): Record<FuncRef, Function> {
   } as Record<FuncRef, Function>
 }
 
-function decompose(san: RegExp, token: Token, ctx: Context): Move {
-  const m = san.exec(token.src)
-  /* c8 ignore next 3 */
-  if (null == m) {
-    throw ctx.tabnas.error('unexpected', { src: token.src })
-  }
-  return buildMove(m)
-}
-
 // --- The plugin ----------------------------------------------------------
 
 export const Chess: Plugin = function Chess(tn: Tabnas, options?: ChessOptions) {
@@ -960,17 +1004,19 @@ export const Chess: Plugin = function Chess(tn: Tabnas, options?: ChessOptions) 
       // is never mistaken for a move number.
       token: {
         '#RES': RESULT,
-        '#SAN': san,
-        '#MVN': MOVE_NUMBER,
-        '#NAG': strict ? NAG_STRICT : NAG,
+        '#SAN': makeValueMatcher('#SAN', san, buildMove),
+        '#MVN': makeValueMatcher('#MVN', MOVE_NUMBER, (m) => parseInt(m[0], 10)),
+        '#NAG': makeValueMatcher('#NAG', strict ? NAG_STRICT : NAG, (m) =>
+          parseInt(m[0].substring(1), 10),
+        ),
         '#TGN': TAG_NAME,
       },
     },
 
     lex: {
       match: {
-        pgnComment: { order: 1.2e6, make: makeCommentMatcher },
-        pgnRemark: { order: 1.3e6, make: makeRemarkMatcher },
+        pgnComment: { order: 1.2e6, make: () => makeCommentMatcher(commands) },
+        pgnRemark: { order: 1.3e6, make: () => makeRemarkMatcher(commands) },
         pgnEscape: { order: 1.5e6, make: makeEscapeMatcher },
       },
       emptyResult: [],
@@ -1049,7 +1095,7 @@ into the next line.`,
   })
 
   const grammar = JSON.parse(grammarText)
-  grammar.ref = refs(san, commands)
+  grammar.ref = refs()
   tn.grammar(grammar, { rule: { alt: { g: 'chess' } } })
 }
 
