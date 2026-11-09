@@ -244,12 +244,11 @@ which makes no token at all. The next section says why.
 A parse from a reader holds a window of the source rather than the whole
 text: the engine `make` builds declares the engine's `lex.window` option,
 and the lexer reads on only as a token needs it. Every matcher here reads
-through that window, and none may assume the window holds what it is
-looking for. A brace comment can be longer than the window, and a
-rest-of-line comment can run past its end, so those matchers ask the lexer
-to read on until the closing brace or the line break turns up, or the
-source ends. Only then does the matcher report the comment as never
-closed.
+through that window, and none may assume the window holds what it looks
+for. A brace comment can be longer than the window, and a rest-of-line
+comment can run past its end, so those matchers ask the lexer to read on
+until the closing brace or the line break turns up, or the source ends.
+Only then does the matcher report the comment as never closed.
 
 The gated patterns read a little past what they match: the symbol-tail
 rule looks at the character after a move, and a move number looks past

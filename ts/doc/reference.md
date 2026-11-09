@@ -133,8 +133,7 @@ games[1].moves[0].comments[0].text    // => 'a long comment'
 The games are the ones `tn.parse` gives for the same text. `make` declares
 the window on the engine it builds, and the plugin does not, so an engine
 built by hand with `new Tabnas().use(Chess)` reads a reader whole before
-it parses. An error message from it is in colour only on a terminal, as
-[Colour](#colour) describes.
+it parses.
 
 ### `parse(src, options?) => Game[]`
 
