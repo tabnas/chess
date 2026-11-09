@@ -237,7 +237,7 @@ first-column `%` mean the same thing wherever they appear. Being
 hand-written also lets them keep the row and column counters correct across a
 comment that spans lines, so a parse error later in the file still names the
 right place. The gated matchers have a check of their own, `pgnReach`,
-which makes no token at all; the next section says why.
+which makes no token at all. The next section says why.
 
 ### A source read a window at a time
 
@@ -248,15 +248,16 @@ through that window, and none may assume the window holds what it is
 looking for. A brace comment can be longer than the window, and a
 rest-of-line comment can run past its end, so those matchers ask the lexer
 to read on until the closing brace or the line break turns up, or the
-source ends. Only then is the comment reported as never closed.
+source ends. Only then does the matcher report the comment as never
+closed.
 
 The gated patterns read a little past what they match: the symbol-tail
 rule looks at the character after a move, and a move number looks past
-its digits for spaces and periods. Over a window that ends too soon, a
+its digits for spaces and periods. Over a window that ends too early, a
 pattern could fail where the whole text gives a match, or take `12` where
 the whole text gives `12.`. So `pgnReach`, the check the lexer runs before
 the gated matchers at every token, reads the window on as far as they can
-look: eleven characters, or the run of digits, spaces and periods of a
+look: eleven characters, or the run of digits, spaces, and periods of a
 move number. It reads ahead for them rather than inside each, because in
 Rust they are functions that see only the window's text and cannot ask
 the lexer for more.

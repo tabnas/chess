@@ -104,9 +104,11 @@ window, so `make` declares the engine's `lex.window` option:
 of it, and gives the same value, and the same errors, as `tn.parse` of the
 same text. A reader is an object whose `read(buf)` writes up to
 `buf.length` bytes into the `Uint8Array` `buf` and returns how many, 0 at
-the end, as Node's `fs.readSync(fd, buf)` does; the bytes are read as
-`UTF-8`. The window bounds the text a parse holds, not the value it
-returns: a database parsed from a reader is still returned whole.
+the end, as Node's `fs.readSync(fd, buf)` does. The engine decodes the
+bytes as `UTF-8`. The window bounds the text a parse holds, not the value
+it returns: a database parsed from a reader comes back whole.
+
+Parse a database from a reader:
 
 ```js
 const { make } = require('@tabnas/chess')
@@ -128,10 +130,11 @@ games.length                          // => 2
 games[1].moves[0].comments[0].text    // => 'a long comment'
 ```
 
-The window is declared on the engine `make` builds, not by the plugin, so
-an engine built by hand with `new Tabnas().use(Chess)` reads a reader whole
-before it parses. As with `parse`, an error message is in colour only on a
-terminal (see [Colour](#colour)).
+The games are the ones `tn.parse` gives for the same text. `make` declares
+the window on the engine it builds, and the plugin does not, so an engine
+built by hand with `new Tabnas().use(Chess)` reads a reader whole before
+it parses. An error message from it is in colour only on a terminal, as
+[Colour](#colour) describes.
 
 ### `parse(src, options?) => Game[]`
 
@@ -216,7 +219,7 @@ same way: the plugin sets them, it does not own them.
 
 ### Colour
 
-`make`, `parse` and `parseGame` colour an error **only** when standard
+`make`, `parse`, and `parseGame` colour an error **only** when standard
 output is a real terminal, and never when `NO_COLOR` is set. The engine's
 own default is to colour unconditionally, which is right for a terminal and
 wrong in a browser, a log file or a CI transcript; in a browser the escape
