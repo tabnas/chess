@@ -10,7 +10,7 @@ All exports come from the package root:
 ```js
 const {
   Chess, VERSION,
-  parse, parseGame, parseSan,
+  make, parse, parseGame, parseSan,
   stripCommands, ANNOTATION_NAG,
 } = require('@tabnas/chess')
 ```
@@ -90,6 +90,48 @@ marker, superfluous move numbers) is accepted by both, because the standard
 does not require otherwise.
 
 ## Functions
+
+### `make(options?) => Tabnas`
+
+An engine with the plugin installed, as `new Tabnas().use(Chess, options)`
+builds it, which also reads a source from a reader a window at a time.
+`options` is `ChessOptions`, `start` included. Building the grammar
+dominates a parse, so build one engine and reuse it.
+
+The matchers the plugin installs read the text only through the lexer's
+window, so `make` declares the engine's `lex.window` option:
+`tn.parseReader(reader)` then holds a window of the source rather than all
+of it, and gives the same value, and the same errors, as `tn.parse` of the
+same text. A reader is an object whose `read(buf)` writes up to
+`buf.length` bytes into the `Uint8Array` `buf` and returns how many, 0 at
+the end, as Node's `fs.readSync(fd, buf)` does; the bytes are read as
+`UTF-8`. The window bounds the text a parse holds, not the value it
+returns: a database parsed from a reader is still returned whole.
+
+```js
+const { make } = require('@tabnas/chess')
+
+const bytes = Buffer.from('1. e4 e5 *\n\n1. d4 {a long comment} d5 *')
+let at = 0
+const reader = {
+  read(buf) {
+    const n = Math.min(buf.length, bytes.length - at)
+    buf.set(bytes.subarray(at, at + n))
+    at += n
+    return n
+  },
+}
+
+const games = make().parseReader(reader)
+
+games.length                          // => 2
+games[1].moves[0].comments[0].text    // => 'a long comment'
+```
+
+The window is declared on the engine `make` builds, not by the plugin, so
+an engine built by hand with `new Tabnas().use(Chess)` reads a reader whole
+before it parses. As with `parse`, an error message is in colour only on a
+terminal (see [Colour](#colour)).
 
 ### `parse(src, options?) => Game[]`
 
@@ -174,13 +216,13 @@ same way: the plugin sets them, it does not own them.
 
 ### Colour
 
-`parse` and `parseGame` colour an error **only** when standard output is a
-real terminal, and never when `NO_COLOR` is set. The engine's own default
-is to colour unconditionally, which is right for a terminal and wrong in a
-browser, a log file or a CI transcript; in a browser the escape codes are
-visible noise.
+`make`, `parse` and `parseGame` colour an error **only** when standard
+output is a real terminal, and never when `NO_COLOR` is set. The engine's
+own default is to colour unconditionally, which is right for a terminal and
+wrong in a browser, a log file or a CI transcript; in a browser the escape
+codes are visible noise.
 
-This applies to those two functions only. Building the engine by hand
+This applies to those three functions only. Building the engine by hand
 means the `color` option is yours:
 
 ```js

@@ -610,6 +610,127 @@ function buildMove(m: RegExpExecArray): Move {
   return move
 }
 
+// --- Reading through the window ------------------------------------------
+
+// A parse from a reader (`tn.parseReader`) reads a grammar that declares
+// `lex.window` a window of the source at a time (admin ADR-30), and
+// `make` declares it. While a token is cut from the window, `lex.src` is
+// the window's text and `lex.pnt.sI` counts from the window's start, and
+// the source may go on past the window's end. So every matcher here reads
+// the text through the window, and before it decides it asks the lexer to
+// fill the window as far as it reads: to the terminator it scans for
+// (`scanTo`), or the few characters a pattern reads (`fillReach`, which
+// the gated matchers' check, `pgnReach`, runs before them). It then
+// decides what it decides over the whole text, and a parse from a reader
+// gives the same games and errors as the text. In a parse of a whole text
+// the fill only answers.
+
+// Read the source on until `ahead` UTF-16 units lie past the cursor, or it
+// ends, and say whether they do. A lexer with no `fill` (an engine older
+// than tabnas/parser 0.12.16) reads no window: its text is all there is.
+function fill(lex: any, ahead: number): boolean {
+  return 'function' === typeof lex.fill
+    ? lex.fill(ahead)
+    : ahead <= lex.src.length - lex.pnt.sI
+}
+
+// The position in `lex.src` of what `find` finds at or after `from`, the
+// window read on as far as it takes; -1 once the source ends first, when
+// the window holds the rest of it. Each fill asks for twice what the
+// window holds past the cursor, so a long comment costs its length, not
+// its square.
+function scanTo(
+  lex: any,
+  from: number,
+  find: (src: string, from: number) => number,
+): number {
+  let at = from
+  for (;;) {
+    const src: string = lex.src
+    const found = find(src, at)
+    if (-1 !== found) return found
+    at = src.length
+    const held = at - lex.pnt.sI
+    fill(lex, Math.max(2 * held, held + 1))
+    if (lex.src.length <= at) return -1
+  }
+}
+
+// A brace comment ends at the next closing brace (PGN spec 5).
+function closeBrace(src: string, from: number): number {
+  return src.indexOf('}', from)
+}
+
+// A rest-of-line comment and an escape end before the line break.
+function lineBreak(src: string, from: number): number {
+  for (let i = from; i < src.length; i++) {
+    const c = src.charCodeAt(i)
+    if (10 === c || 13 === c) return i
+  }
+  return -1
+}
+
+// The source from the cursor up to, but not including, the first line
+// break, or to the source's end.
+function lineAt(lex: any): string {
+  const start = lex.pnt.sI
+  const end = scanTo(lex, start, lineBreak)
+  return lex.src.substring(start, -1 === end ? lex.src.length : end)
+}
+
+// How far past the cursor the patterns of the gated matchers read. The
+// longest move is ten characters (`Qb1xd2++!!`, `bxc8=Q++!!`), and the
+// symbol-tail lookahead reads one more; a glyph reads at most ten and a
+// termination marker eight (`1/2-1/2` and one more).
+const REACH = 11
+
+// How far past `at` the move-number pattern reads: its digits, nine at
+// most, the spaces and tabs after them, the periods after those, and one
+// more character. The run of spaces and periods has no bound of its own,
+// so neither has this. Zero where no digit starts the text.
+function numberReach(src: string, at: number): number {
+  let i = at
+  while (i < src.length && i - at < 9 && isDigit(src.charCodeAt(i))) i++
+  if (i === at) return 0
+  let c = src.charCodeAt(i)
+  while (32 === c || 9 === c) c = src.charCodeAt(++i)
+  while (46 === c) c = src.charCodeAt(++i)
+  return i - at + 1
+}
+
+function isDigit(c: number): boolean {
+  return 48 <= c && c <= 57
+}
+
+// Fill the window as far as a gated pattern reads (`REACH`, or the run of a
+// move number), so that it matches over the window what it matches over
+// the whole text, its lookahead included. Where the source ends sooner,
+// the window holds the rest of it.
+function fillReach(lex: any): void {
+  let ahead = REACH
+  for (;;) {
+    if (!fill(lex, ahead)) return
+    const need = numberReach(lex.src, lex.pnt.sI)
+    if (need <= ahead) return
+    ahead = Math.max(need, 2 * ahead)
+  }
+}
+
+// The gated matchers (`match.token` below) run their patterns over the
+// window, and a pattern may read past what it matches, or need more than
+// the window holds before it can match at all: over a window that ends
+// too soon it could fail, or cut a shorter token, where the whole text
+// gives a longer one. This is their check (`match.check`), which the lexer
+// runs before them at every token: it fills the window as far as they
+// read, and lets them run. It fills ahead of them, rather than inside each
+// gated matcher, so that the match tokens read the text once the window
+// holds it, plain patterns included. A cut that runs to the window's end,
+// as a tag name may, is cut again by the lexer over a wider window.
+function pgnReach(lex: any): undefined {
+  fillReach(lex)
+  return undefined
+}
+
 // --- Hand-written lex matchers -------------------------------------------
 
 // These three are registered in the `lex.match` registry rather than as
@@ -621,12 +742,14 @@ function buildMove(m: RegExpExecArray): Move {
 // A comment's token carries the comment the tree holds, its `[%…]`
 // commands read as the `commands` option says, so a reader of the rule
 // passes (a transducer part) has it without the action that files it.
+// The closing brace may lie past the window's end: the comment is
+// unterminated only once the source ends first.
 function makeCommentMatcher(commands: boolean) {
   return function pgnComment(lex: any) {
     const pnt = lex.pnt
     if ('{' !== lex.src[pnt.sI]) return undefined
 
-    const end = lex.src.indexOf('}', pnt.sI + 1)
+    const end = scanTo(lex, pnt.sI + 1, closeBrace)
     if (-1 === end) return lex.bad('unterminated_comment', pnt.sI, lex.src.length)
 
     const src = lex.src.substring(pnt.sI, end + 1)
@@ -646,7 +769,7 @@ function makeRemarkMatcher(commands: boolean) {
     const pnt = lex.pnt
     if (';' !== lex.src[pnt.sI]) return undefined
 
-    const src = lineFrom(lex.src, pnt.sI)
+    const src = lineAt(lex)
     const tkn = lex.token('#RMK', makeComment('line', src.substring(1), commands), src, pnt)
     advance(pnt, src)
     return tkn
@@ -660,7 +783,7 @@ function makeEscapeMatcher() {
     const pnt = lex.pnt
     if (1 !== pnt.cI || '%' !== lex.src[pnt.sI]) return undefined
 
-    const src = lineFrom(lex.src, pnt.sI)
+    const src = lineAt(lex)
     // #CM is in the IGNORE token set, so the parser never sees it.
     const tkn = lex.token('#CM', undefined, src, pnt)
     advance(pnt, src)
@@ -693,12 +816,6 @@ function makeValueMatcher(
     pnt.cI += src.length
     return tkn
   }
-}
-
-function lineFrom(src: string, start: number): string {
-  let end = start
-  while (end < src.length && '\n' !== src[end] && '\r' !== src[end]) end++
-  return src.substring(start, end)
 }
 
 // Move the lex point over `src`, keeping row and column true across any
@@ -1000,6 +1117,7 @@ export const Chess: Plugin = function Chess(tn: Tabnas, options?: ChessOptions) 
     },
 
     match: {
+      check: pgnReach,
       // Order matters: `#RES` is tried before `#MVN` so the `1` of `1-0`
       // is never mistaken for a move number.
       token: {
@@ -1125,10 +1243,10 @@ export type DatabaseOptions = Omit<ChessOptions, 'start'>
  * tool follows — colour a real terminal, honour NO_COLOR, and stay quiet
  * anywhere there is no `process` at all.
  *
- * Only `parse` and `parseGame` apply this. They build the whole engine, so
- * the choice is theirs to make; a caller who builds their own engine has
- * already been handed the `color` option and should not have it taken
- * back by a plugin.
+ * Only `make`, and `parse` and `parseGame`, which build on it, apply this.
+ * They build the whole engine, so the choice is theirs to make; a caller
+ * who builds their own engine has already been handed the `color` option
+ * and should not have it taken back by a plugin.
  */
 function colour(): { active: boolean } {
   const proc = (globalThis as Record<string, any>).process
@@ -1136,11 +1254,30 @@ function colour(): { active: boolean } {
   return { active: true === proc?.stdout?.isTTY }
 }
 
+/**
+ * Build an engine with the chess grammar installed: the plugin on a bare
+ * engine, as `new Tabnas().use(Chess, options)` builds it, which also
+ * reads a source from a reader a window at a time (`tn.parseReader`,
+ * admin ADR-30).
+ *
+ * The plugin's matchers read the text only through the lexer's window, so
+ * the engine declares `lex.window`: a database read from a reader is held
+ * a window at a time rather than whole, and parses to the same games and
+ * errors as its text. The window is declared here, on the engine this
+ * builds, and not in the plugin, which installs on an engine its caller
+ * configures. Reuse the result: building the grammar dominates a parse.
+ */
+export function make(options?: ChessOptions): Tabnas {
+  const tn = new Tabnas({ color: colour() }).use(Chess, options)
+  tn.options({ lex: { window: true } })
+  return tn
+}
+
 /** Parse a PGN database (zero or more games). */
 export function parse(src: string, options?: DatabaseOptions): Database {
   // `start` is forced, not merely absent from the type: a JavaScript
   // caller has no type to stop them, and the return type would be a lie.
-  return new Tabnas({ color: colour() }).use(Chess, { ...options, start: 'pgn' }).parse(src)
+  return make({ ...options, start: 'pgn' }).parse(src)
 }
 
 /** Parse a single game, or `undefined` if the source holds none. */

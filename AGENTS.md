@@ -97,7 +97,10 @@ It does three things:
 
 1. **Lexes the regular part of the notation** with five gated match-token
    matchers (`#SAN`, `#MVN`, `#NAG`, `#RES`, `#TGN`) and three ungated
-   hand-written ones (`pgnComment`, `pgnRemark`, `pgnEscape`).
+   hand-written ones (`pgnComment`, `pgnRemark`, `pgnEscape`), each reading
+   the text through the lexer's window, which the gated ones' check,
+   `pgnReach`, fills for them (see "Every matcher reads the text through
+   the lexer's window" below).
 2. **Parses the recursive part** — games, tag pairs, variations — with nine
    rules in [`chess-grammar.jsonic`](chess-grammar.jsonic).
 3. **Builds a plain game model** (`Game[]`) in the `ref` actions, rather
@@ -130,9 +133,9 @@ an inferred field would make the parser a chess engine, and a bad one.
 | [`go/`](go/) | Go port — `github.com/tabnas/chess/go` (`const VERSION` in `go/chess.go`). Requires the published `github.com/tabnas/parser/go` (no `replace` directive). |
 | [`rs/`](rs/) | Rust port — the `tabnas-chess` crate (`pub const VERSION` in `rs/src/lib.rs`), published to crates.io. The engine crate is on crates.io too, as `tabnas-parser`, but the committed manifest stays path-only: the engine is a **path dependency on a sibling checkout** of `tabnas/parser`, `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`, which `crates-release.yml` rewrites into a crates.io requirement when it publishes. See [`rs/README.md`](rs/README.md). |
 | [`test/spec/`](test/spec/) | Shared `.tsv` conformance fixtures. **All three** runtimes auto-discover and run every file here, so adding one covers TypeScript, Go and Rust together. See [`test/AGENTS.md`](test/AGENTS.md). |
-| [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`, `port-deps.test.ts` (the three ports depend on the same tabnas repos, ADR-24; stamped from admin), `translate.test.ts` (the translation parts vs the files), and `docs.test.js` (the fast half of the prose gate, run by `npm test` straight from `test/`). |
-| [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`, and `go/translate_test.go` the translation parts against the files. |
-| [`rs/tests/`](rs/tests/) | `chess_test.rs`, `parity_test.rs`, `perf_test.rs`, `version_test.rs` and `translate_test.rs` — the same jobs again. The crate's and the README's examples run as doctests, which `cargo test --all-targets` does NOT cover. |
+| [`ts/test/`](ts/test/) | `chess.test.ts` (what a fixture cannot express), `parity.test.ts` (the fixtures), `reader.test.ts` (a parse from a reader against the same text whole), `debug-model.test.ts` (grammar shape via `@tabnas/debug`), `doc-examples.test.ts` (runs `// =>` assertions in the docs), `perf.test.ts`, `version.test.ts`, `port-deps.test.ts` (the three ports depend on the same tabnas repos, ADR-24; stamped from admin), `translate.test.ts` (the translation parts vs the files), and `docs.test.js` (the fast half of the prose gate, run by `npm test` straight from `test/`). |
+| [`go/chess_test.go`](go/chess_test.go), [`go/parity_test.go`](go/parity_test.go) | The same in-language cases and the same `.tsv` fixtures. `go/reader_test.go` parses from a reader, `go/version_test.go` checks the Go `const VERSION` against `ts/package.json`, and `go/translate_test.go` the translation parts against the files. |
+| [`rs/tests/`](rs/tests/) | `chess_test.rs`, `parity_test.rs`, `reader_test.rs`, `perf_test.rs`, `version_test.rs` and `translate_test.rs` — the same jobs again. The crate's and the README's examples run as doctests, which `cargo test --all-targets` does NOT cover. |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs, shared by all three runtimes, plus `grammar.svg` / `grammar.txt` generated from the live grammar by `make diagram`. |
 | [`web/`](web/) | The `<chess-view>` web component — a board view built on the TS package, bundled self-contained by `web/build.js`. **Not** part of the parser: it holds the legal move generator the parser deliberately does not have. See [`web/README.md`](web/README.md). |
 
@@ -153,6 +156,43 @@ an inferred field would make the parser a chess engine, and a bad one.
   fixed matcher at 2e6). Being hand-written is also what lets `pgnComment`
   keep `pnt.rI` / `pnt.cI` honest across a comment that spans lines; a
   regex matcher would leave every later error position wrong.
+
+- **Every matcher reads the text through the lexer's window.** `make`
+  (TypeScript, Rust) and `Make` (Go) declare `lex.window`, so a parse
+  from a reader (`parseReader`, `ParseReader`, `parse_reader`) holds a
+  window of the source rather than all of it (admin ADR-30). While a
+  token is cut, the text a matcher reads (`lex.src`, `Lex.Src`,
+  `Lexer::window`) is the window's, and it may end before the source
+  does. So a matcher asks the lexer to fill the window as far as it reads
+  before it decides. `pgnComment` scans to its closing brace, and
+  `pgnRemark` and `pgnEscape` to the line break, filling as they go
+  (`scanTo`, `scan_to`), each fill asking for twice what the window holds
+  so that a long comment costs its length; a comment is unterminated only
+  once the source ends first. `pgnReach` is the match tokens' check
+  (`match.check`, `Match.Check`, and in Rust the `@pgn-reach` reference
+  an options document installs), which the lexer runs before the gated
+  matchers at every token: it fills the window as far as the gated
+  patterns read, eleven characters (the longest move and the symbol-tail
+  character after it) or a move number's run of digits, spaces, tabs and
+  periods and one more, and lets them run. It fills ahead of them rather
+  than inside each because Rust's gated matchers are callbacks given the
+  window's text, which cannot fill, and because the TypeScript and Go
+  match band reads its text once, before its matchers run. A check rather
+  than a custom matcher ordered before the band, because Rust's engine
+  clones a custom matcher's entry at every call: on a whole text the
+  check costs 0.8% more instructions in Rust, such a matcher 3.2%. A
+  plain pattern that runs to the window's end, as `#TGN` may, is cut again
+  by the lexer over a wider window. The window is declared on the engine a
+  constructor builds, never by the plugin (`Chess`, `chess`), which
+  installs on an engine its caller configures. No action may read the
+  context's source (`ctx.src()`, `Context.Src`, `Context::source`): it is
+  empty in a windowed parse. `ts/test/reader.test.ts`,
+  `go/reader_test.go` and `rs/tests/reader_test.rs` hold a parse from a
+  reader to the same text parsed whole (value, tokens, rule passes, and an
+  error's code, position, row and column), over every fixture and a long
+  database whose tokens of every kind straddle the 64 KiB boundaries;
+  TypeScript and Rust under windows of a few characters too, Go only under
+  its fixed 64 KiB, since its small-window hook is unexported.
 
 - **`comment.lex` is off.** PGN comments are content, not whitespace: they
   are `#CMT` / `#RMK` tokens the grammar keeps. The only thing genuinely
@@ -739,7 +779,11 @@ shared fixtures pin. Four things differ because the languages do:
 - **`#TGN` is the only plain regexp matcher.** The other four are
   callback matchers, because each needs a bounds check the `regex` crate
   cannot express as a lookahead — the same reason the Go port uses
-  `Match.TokenFn`.
+  `Match.TokenFn`. A callback is given the window's text from the cursor,
+  not the lexer, so it cannot fill the window: their check, `pgn_reach`,
+  fills it for them before they run. `chess` registers it as the
+  `@pgn-reach` reference and installs it with an options document, since
+  the engine builds a check only from a reference.
 
 The engine's lexer advances by Unicode scalar and keeps `ri`/`ci` honest
 as it goes, so this port needs no `advance` helper for the hand-written

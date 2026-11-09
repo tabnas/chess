@@ -41,6 +41,23 @@ assert_eq!(Some(6), played.disambiguation.unwrap().rank);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+The engine `make` builds also parses a source from a reader, any
+`std::io::Read`, a window at a time (`Tabnas::parse_reader`): it holds a
+window of the text rather than all of it, and gives the same value and
+errors as `parse` of the same text. The matchers the plugin installs read
+the text only through the lexer's window, so `make` declares the engine's
+`lex.window` option.
+
+```rust
+use tabnas_chess::{make, model_of, ChessOptions, Database};
+
+let tn = make(&ChessOptions::default())?;
+let games: Database = model_of(&tn.parse_reader("1. e4 e5 *\n\n1. d4 d5 *".as_bytes())?)?;
+
+assert_eq!(2, games.len());
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
 `chess(&mut tn, &options)` installs the grammar on an engine you are
 configuring yourself, and `plugin()` is the same thing as a
 `Tabnas::use_plugin` descriptor for a caller who already holds an option

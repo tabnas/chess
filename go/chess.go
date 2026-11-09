@@ -719,33 +719,153 @@ func advance(pnt *tabnas.Point, src string) {
 	}
 }
 
-func lineFrom(src string, start int) string {
-	end := start
-	for end < len(src) && '\n' != src[end] && '\r' != src[end] {
-		end++
+// --- Reading through the window ------------------------------------------
+
+// A parse from a reader (Tabnas.ParseReader) reads a grammar that declares
+// lex.window a window of the source at a time (admin ADR-30), and Make
+// declares it. While a token is cut from the window, lex.Src is the
+// window's text and the cursor (lex.Cursor) counts from the window's
+// start, and the source may go on past the window's end. So every matcher
+// here reads the text through the window, and before it decides it asks
+// the lexer to fill the window as far as it reads: to the terminator it
+// scans for (scanTo), or the few bytes a pattern reads (fillReach, which
+// the gated matchers' check, pgnReach, runs before them). It then decides
+// what it decides over the whole text, and a parse from a reader gives
+// the same games and errors as the text. lex.Src is the grown window's
+// text after a fill, so a matcher reads it again rather than keeping it.
+// In a parse of a whole text the fill only answers.
+
+// scanTo is the position in lex.Src of what find finds at or after from,
+// the window read on as far as it takes; -1 once the source ends first,
+// when the window holds the rest of it. Each fill asks for twice what the
+// window holds past the cursor, so a long comment costs its length, not
+// its square.
+func scanTo(lex *tabnas.Lex, from int, find func(src string, from int) int) int {
+	at := from
+	for {
+		src := lex.Src
+		if found := find(src, at); 0 <= found {
+			return found
+		}
+		at = len(src)
+		held := at - lex.Cursor().SI
+		lex.Fill(max(2*held, held+1))
+		if len(lex.Src) <= at {
+			return -1
+		}
 	}
-	return src[start:end]
+}
+
+// closeBrace finds where a brace comment ends: the next closing brace
+// (PGN spec 5).
+func closeBrace(src string, from int) int {
+	if i := strings.IndexByte(src[from:], '}'); 0 <= i {
+		return from + i
+	}
+	return -1
+}
+
+// lineBreak finds where a rest-of-line comment and an escape end: before
+// the line break.
+func lineBreak(src string, from int) int {
+	if i := strings.IndexAny(src[from:], "\n\r"); 0 <= i {
+		return from + i
+	}
+	return -1
+}
+
+// lineAt is the source from the cursor up to, but not including, the
+// first line break, or to the source's end.
+func lineAt(lex *tabnas.Lex) string {
+	start := lex.Cursor().SI
+	end := scanTo(lex, start, lineBreak)
+	if 0 > end {
+		end = len(lex.Src)
+	}
+	return lex.Src[start:end]
+}
+
+// reach is how far past the cursor the patterns of the gated matchers
+// read, in bytes. The longest move is ten (`Qb1xd2++!!`, `bxc8=Q++!!`),
+// and the symbol-tail check reads one more; a glyph reads at most ten and
+// a termination marker eight (`1/2-1/2` and one more).
+const reach = 11
+
+// numberReach is how far past at the move-number pattern reads: its
+// digits, nine at most, the spaces and tabs after them, the periods after
+// those, and one more byte. The run of spaces and periods has no bound of
+// its own, so neither has this. Zero where no digit starts the text.
+func numberReach(src string, at int) int {
+	i := at
+	for i < len(src) && i-at < 9 && '0' <= src[i] && src[i] <= '9' {
+		i++
+	}
+	if i == at {
+		return 0
+	}
+	for i < len(src) && (' ' == src[i] || '\t' == src[i]) {
+		i++
+	}
+	for i < len(src) && '.' == src[i] {
+		i++
+	}
+	return i - at + 1
+}
+
+// fillReach fills the window as far as a gated pattern reads (reach, or
+// the run of a move number), so that it matches over the window what it
+// matches over the whole text, the symbol-tail check included. Where the
+// source ends sooner, the window holds the rest of it.
+func fillReach(lex *tabnas.Lex) {
+	ahead := reach
+	for {
+		if !lex.Fill(ahead) {
+			return
+		}
+		need := numberReach(lex.Src, lex.Cursor().SI)
+		if need <= ahead {
+			return
+		}
+		ahead = max(need, 2*ahead)
+	}
+}
+
+// pgnReach is the gated matchers' check (Match.Check). They (Match.TokenFn
+// and Match.Token below) run their patterns over the window, and a pattern
+// may read past what it matches, or need more than the window holds
+// before it can match at all: over a window that ends too soon it could
+// fail, or cut a shorter token, where the whole text gives a longer one.
+// The lexer runs the check before them at every token: it fills the window
+// as far as they read, and lets them run. It fills ahead of them, rather
+// than inside each gated matcher, so that the match tokens read the text
+// once the window holds it, the plain #TGN pattern included. A cut that
+// runs to the window's end, as a tag name may, is cut again by the lexer
+// over a wider window.
+func pgnReach(lex *tabnas.Lex) *tabnas.LexCheckResult {
+	fillReach(lex)
+	return nil
 }
 
 // A comment's token carries the comment the tree holds, its `[%…]`
 // commands read as the `commands` option says, so a reader of the rule
 // passes (a transducer part) has it without the action that files it.
 // The value is lazy, a TokenValFunc that builds it when a reader resolves
-// it, so a parse that reads only the tree pays nothing for it.
+// it, so a parse that reads only the tree pays nothing for it. The
+// closing brace may lie past the window's end: the comment is
+// unterminated only once the source ends first.
 func makeCommentMatcher(tin tabnas.Tin, commands bool) tabnas.MakeLexMatcher {
 	return func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
 		return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 			pnt := lex.Cursor()
-			src := lex.Src
-			if pnt.SI >= len(src) || '{' != src[pnt.SI] {
+			if pnt.SI >= len(lex.Src) || '{' != lex.Src[pnt.SI] {
 				return nil
 			}
 
-			rel := strings.IndexByte(src[pnt.SI+1:], '}')
-			if 0 > rel {
+			end := scanTo(lex, pnt.SI+1, closeBrace)
+			src := lex.Src
+			if 0 > end {
 				return badToken(lex, "unterminated_comment", src, pnt.SI, len(src))
 			}
-			end := pnt.SI + 1 + rel
 
 			tsrc := src[pnt.SI : end+1]
 			tkn := lex.Token("#CMT", tin, commentValueOf("brace", tsrc[1:len(tsrc)-1], commands), tsrc)
@@ -759,12 +879,11 @@ func makeRemarkMatcher(tin tabnas.Tin, commands bool) tabnas.MakeLexMatcher {
 	return func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
 		return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 			pnt := lex.Cursor()
-			src := lex.Src
-			if pnt.SI >= len(src) || ';' != src[pnt.SI] {
+			if pnt.SI >= len(lex.Src) || ';' != lex.Src[pnt.SI] {
 				return nil
 			}
 
-			tsrc := lineFrom(src, pnt.SI)
+			tsrc := lineAt(lex)
 			tkn := lex.Token("#RMK", tin, commentValueOf("line", tsrc[1:], commands), tsrc)
 			advance(pnt, tsrc)
 			return tkn
@@ -778,12 +897,11 @@ func makeEscapeMatcher() tabnas.MakeLexMatcher {
 	return func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
 		return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
 			pnt := lex.Cursor()
-			src := lex.Src
-			if 1 != pnt.CI || pnt.SI >= len(src) || '%' != src[pnt.SI] {
+			if 1 != pnt.CI || pnt.SI >= len(lex.Src) || '%' != lex.Src[pnt.SI] {
 				return nil
 			}
 
-			tsrc := lineFrom(src, pnt.SI)
+			tsrc := lineAt(lex)
 			// #CM is in the IGNORE token set, so the parser never sees it.
 			tkn := lex.Token("#CM", tabnas.TinCM, nil, tsrc)
 			advance(pnt, tsrc)
@@ -1462,6 +1580,7 @@ func Chess(j *tabnas.Tabnas, options map[string]any) error {
 
 		Match: &tabnas.MatchOptions{
 			Lex:   boolPtr(true),
+			Check: pgnReach,
 			Token: map[string]*regexp.Regexp{"#TGN": tagName},
 			TokenFn: map[string]tabnas.LexMatcher{
 				"#RES": makeResultMatcher(tRES),
@@ -1619,6 +1738,14 @@ func colourActive() bool {
 
 // Make builds a Tabnas engine with the chess grammar installed. Reuse the
 // result: building the grammar dominates a parse.
+//
+// The engine also reads a source from a reader a window at a time
+// (Tabnas.ParseReader, admin ADR-30). The plugin's matchers read the text
+// only through the lexer's window, so Make declares lex.window: a database
+// read from a reader is held a window at a time rather than whole, and
+// parses to the same games and errors as its text. The window is declared
+// here, on the engine Make builds, and not in Chess, which installs on an
+// engine its caller configures.
 func Make(opts ...Options) *tabnas.Tabnas {
 	var o Options
 	if 0 < len(opts) {
@@ -1637,6 +1764,8 @@ func Make(opts ...Options) *tabnas.Tabnas {
 	if err := Chess(j, o.toMap()); nil != err {
 		panic(err)
 	}
+	window := true
+	j.SetOptions(tabnas.Options{Lex: &tabnas.LexOptions{Window: &window}})
 	return j
 }
 

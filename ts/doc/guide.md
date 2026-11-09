@@ -199,6 +199,26 @@ export-format PGN puts a blank line before every tag section (8.2.1). Where
 layout cannot be trusted, `parse` on the whole source is the correct answer:
 the grammar starts a new game at a tag pair regardless of whitespace.
 
+To read the file without first reading its text into one string, parse it
+from a reader. The engine `make` builds reads a source from a reader a
+window at a time, so the parse holds a window of the text rather than all
+of it, and gives the same games as the text would:
+
+```js
+const fs = require('node:fs')
+const { make } = require('@tabnas/chess')
+
+const fd = fs.openSync('games.pgn', 'r')
+try {
+  const games = make().parseReader({ read: (buf) => fs.readSync(fd, buf) })
+} finally {
+  fs.closeSync(fd)
+}
+```
+
+The database it returns is still whole: a reader bounds the text a parse
+holds, not the games it returns.
+
 ## Write notation back out
 
 Nothing here writes PGN, but the model holds everything needed to. Moves
