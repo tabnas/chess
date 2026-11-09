@@ -102,6 +102,12 @@ assert_eq!(Some(1), played.number);
 assert_eq!(Some(tabnas_chess::Side::White), played.side);
 ```
 
+**A large file.** The engine that `make` builds in TypeScript and Rust,
+and `Make` in Go, also parses from a reader (`parseReader`, `ParseReader`,
+`parse_reader`). It holds a window of the text rather than all of it, and
+gives the same games and errors as the text.
+[`ts/doc/reference.md`](ts/doc/reference.md) has the details.
+
 ## What you get back
 
 A plain, JSON-serialisable game model: no classes, no cycles, nothing to

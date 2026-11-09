@@ -56,6 +56,26 @@ for _, src := range sources {
 }
 ```
 
+The engine `Make` builds also parses a source from an `io.Reader` a window
+at a time: it holds a window of the text rather than all of it, and gives
+the same games and errors as `Parse` of the same text. Parse a file from
+a reader:
+
+```go
+f, err := os.Open("games.pgn")
+if nil != err {
+    return err
+}
+defer f.Close()
+out, err := chess.Make().ParseReader(f)
+// out is *chess.Database
+```
+
+The matchers the plugin installs read the text only through the lexer's
+window, so `Make` declares the engine's `Lex.Window` option. `Chess`, which
+installs the grammar on an engine the caller configures, leaves that
+option to the caller.
+
 ## Options
 
 ```go

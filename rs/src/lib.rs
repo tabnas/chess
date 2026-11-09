@@ -571,8 +571,10 @@ into the next line.",
     tn.options.rule.start = options.start.as_str().to_string();
 
     actions::register(tn, pattern, options.commands);
+    tn.imperative_lex_check_ref(lex::REACH_REF, lex::pgn_reach);
 
     tn.grammar_json_with_setting(GRAMMAR_TEXT, &GrammarSetting::groups("chess"))
+        .and_then(|tn| tn.grammar_json(lex::REACH_CHECK))
         .map(|_| ())
         .map_err(|error| PluginError(error.to_string()))
 }
@@ -662,10 +664,19 @@ fn colour() -> bool {
 /// so the instance records the plugin and its resolved options — which is
 /// what puts `chess` in `Tabnas::describe` and in a diagnostic's
 /// `plugins` list.
+///
+/// The engine also reads a source from a reader a window at a time
+/// ([`Tabnas::parse_reader`], admin ADR-30). The plugin's matchers read
+/// the text only through the lexer's window, so `make` declares
+/// `lex.window`: a database read from a reader is held a window at a time
+/// rather than whole, and parses to the same games and errors as its
+/// text. The window is declared here, on the engine `make` builds, and
+/// not in [`chess`], which installs on an engine its caller configures.
 pub fn make(options: &ChessOptions) -> Result<Tabnas, PluginError> {
     let mut tn = Tabnas::new();
     tn.options.color.active = colour();
     tn.use_plugin(plugin(), Some(to_option_value(options)))?;
+    tn.set_options(|options| options.lex.window = true)?;
     Ok(tn)
 }
 

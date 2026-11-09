@@ -14,13 +14,26 @@
 //! goes, so a comment with a newline in it leaves every later error
 //! position right — the bookkeeping TypeScript and Go each have to do by
 //! hand in an `advance` helper.
+//!
+//! Every matcher reads the text through the lexer's window. A parse from
+//! a reader (`Tabnas::parse_reader`) reads a grammar that declares
+//! `lex.window` a window of the source at a time (admin ADR-30), and
+//! [`crate::make`] declares it: [`Lexer::window`] is then the text from
+//! the cursor to the window's end, and the source may go on past it. So
+//! before a matcher decides, it asks the lexer to fill the window as far
+//! as it reads ([`Lexer::fill`]): to the terminator it scans for
+//! ([`scan_to`]), or the few characters a gated pattern reads
+//! ([`fill_reach`], which the gated matchers' check, [`pgn_reach`], runs
+//! before them). It then decides what it decides over the whole text, and
+//! a parse from a reader gives the same games and errors as the text. In a
+//! parse of a whole text the fill only answers.
 
 use std::sync::Arc;
 
 use regex::Regex;
 use tabnas::{
-    Context, LexMatcher, Lexer, MatchToken, MatchTokenMatcher, MatchTokenResult, Rule, Tin, Token,
-    Value, TIN_CM,
+    Context, LexCheckResult, LexMatcher, Lexer, MatchToken, MatchTokenMatcher, MatchTokenResult,
+    Rule, Tin, Token, Value, TIN_CM,
 };
 
 use crate::actions::{comment_value, decompose, make_comment, move_value};
@@ -207,17 +220,113 @@ fn imperative(
     }
 }
 
-/// The source up to, but not including, the first line break.
-fn line_from(rest: &str) -> &str {
-    match rest.find(['\n', '\r']) {
-        Some(end) => &rest[..end],
-        None => rest,
+/// Where `find` finds what ends a token, as a byte offset into
+/// [`Lexer::window`] at or after `from`, the window read on as far as it
+/// takes; `None` once the source ends first, when the window holds the
+/// rest of it. Each fill asks for twice what the window holds past the
+/// cursor, so a long comment costs its length, not its square.
+fn scan_to(
+    lexer: &mut Lexer<'_>,
+    from: usize,
+    find: impl Fn(&str) -> Option<usize>,
+) -> Option<usize> {
+    let mut at = from;
+    loop {
+        let rest = lexer.window();
+        if let Some(found) = find(&rest[at..]) {
+            return Some(at + found);
+        }
+        at = rest.len();
+        let held = rest.chars().count();
+        lexer.fill(held.saturating_mul(2).max(held + 1));
+        if lexer.window().len() <= at {
+            return None;
+        }
     }
 }
+
+/// The source from the cursor up to, but not including, the first line
+/// break, or to the source's end.
+fn line_at(lexer: &mut Lexer<'_>) -> String {
+    let end = scan_to(lexer, 0, |text| text.find(['\n', '\r']));
+    let rest = lexer.window();
+    rest[..end.unwrap_or(rest.len())].to_string()
+}
+
+/// How far past the cursor the patterns of the gated matchers read, in
+/// characters. The longest move is ten (`Qb1xd2++!!`, `bxc8=Q++!!`), and
+/// the symbol-tail check reads one more; a glyph reads at most ten and a
+/// termination marker eight (`1/2-1/2` and one more).
+const REACH: usize = 11;
+
+/// How far past the start of `rest` the move-number pattern reads: its
+/// digits, nine at most, the spaces and tabs after them, the periods after
+/// those, and one more character. The run of spaces and periods has no
+/// bound of its own, so neither has this. Zero where no digit starts
+/// `rest`.
+fn number_reach(rest: &str) -> usize {
+    let bytes = rest.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() && at < 9 && bytes[at].is_ascii_digit() {
+        at += 1;
+    }
+    if 0 == at {
+        return 0;
+    }
+    while at < bytes.len() && matches!(bytes[at], b' ' | b'\t') {
+        at += 1;
+    }
+    while at < bytes.len() && b'.' == bytes[at] {
+        at += 1;
+    }
+    at + 1
+}
+
+/// Fill the window as far as a gated pattern reads ([`REACH`], or the run
+/// of a move number), so that it matches over the window what it matches
+/// over the whole text, the symbol-tail check included. Where the source
+/// ends sooner, the window holds the rest of it.
+fn fill_reach(lexer: &mut Lexer<'_>) {
+    let mut ahead = REACH;
+    loop {
+        if !lexer.fill(ahead) {
+            return;
+        }
+        let need = number_reach(lexer.window());
+        if need <= ahead {
+            return;
+        }
+        ahead = need.max(ahead.saturating_mul(2));
+    }
+}
+
+/// `pgnReach`, the gated matchers' check (`match.check`). They
+/// ([`match_tokens`]) are callbacks the engine hands the window's text
+/// from the cursor, and a pattern may read past what it matches, or need
+/// more than the window holds before it can match at all: over a window
+/// that ends too soon it could fail, or cut a shorter token, where the
+/// whole text gives a longer one. A callback cannot ask the lexer for
+/// more, so the lexer runs this check before them at every token: it fills
+/// the window as far as they read, and lets them run. A cut that runs to
+/// the window's end, as a tag name may, is cut again by the lexer over a
+/// wider window.
+pub(crate) fn pgn_reach(lexer: &mut Lexer<'_>) -> LexCheckResult {
+    fill_reach(lexer);
+    LexCheckResult::Continue
+}
+
+/// The reference [`crate::chess`] registers [`pgn_reach`] under. The engine
+/// installs a check through a reference, as a serialized grammar names one.
+pub(crate) const REACH_REF: &str = "@pgn-reach";
+
+/// The options document that makes [`pgn_reach`] the match tokens' check.
+pub(crate) const REACH_CHECK: &str = r#"{"options":{"match":{"check":"@pgn-reach"}}}"#;
 
 /// A comment's token carries the comment the tree holds, its `[%…]`
 /// commands read as the `commands` option says, so a reader of the rule
 /// passes (a transducer part) has it without the action that files it.
+/// The closing brace may lie past the window's end: the comment is
+/// unterminated only once the source ends first.
 fn comment_matcher(
     tin: Tin,
     commands: bool,
@@ -226,18 +335,17 @@ fn comment_matcher(
        + Sync
        + 'static {
     move |lexer, _rule, _context| {
-        let rest = lexer.remaining();
-        if !rest.starts_with('{') {
+        if !lexer.window().starts_with('{') {
             return None;
         }
-        let Some(close) = rest[1..].find('}') else {
+        let Some(close) = scan_to(lexer, 1, |text| text.find('}')) else {
             // The span runs to the end of the source, so the diagnostic
             // shows the comment that never closed rather than one brace.
             let start = lexer.point().site.pos;
-            let end = lexer.source().chars().count();
+            let end = start + lexer.window().chars().count();
             return Some(lexer.bad_span("unterminated_comment", start, end));
         };
-        let source = rest[..close + 2].to_string();
+        let source = lexer.window()[..close + 1].to_string();
         let inner = source[1..source.len() - 1].to_string();
         let point = lexer.point();
         let comment = comment_value(&make_comment(CommentKind::Brace, inner, commands));
@@ -255,11 +363,10 @@ fn remark_matcher(
        + Sync
        + 'static {
     move |lexer, _rule, _context| {
-        let rest = lexer.remaining();
-        if !rest.starts_with(';') {
+        if !lexer.window().starts_with(';') {
             return None;
         }
-        let source = line_from(rest).to_string();
+        let source = line_at(lexer);
         let inner = source[1..].to_string();
         let point = lexer.point();
         let comment = comment_value(&make_comment(CommentKind::Line, inner, commands));
@@ -281,11 +388,10 @@ fn escape_matcher(
         if 1 != point.site.ci {
             return None;
         }
-        let rest = lexer.remaining();
-        if !rest.starts_with('%') {
+        if !lexer.window().starts_with('%') {
             return None;
         }
-        let source = line_from(rest).to_string();
+        let source = line_at(lexer);
         // #CM is in the IGNORE token set, so the parser never sees it.
         let token = lexer.token("#CM", TIN_CM, Value::Undefined, source.as_str(), point);
         lexer.advance_chars(source.chars().count());

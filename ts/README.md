@@ -40,6 +40,11 @@ parseGame('1. e4 e5 *').moves.length   // => 2
 parseSan('O-O-O').castle               // => 'queen'
 ```
 
+`make()` builds the engine with the plugin installed, which also parses a
+source from a reader a window at a time (`tn.parseReader`), holding a
+window of the text rather than all of it.
+[reference.md](doc/reference.md) has the details.
+
 ## Documentation
 
 Four-quadrant [Diátaxis](https://diataxis.fr) docs:
