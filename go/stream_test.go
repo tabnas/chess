@@ -7,6 +7,12 @@
 // this holds the Go port to it too, over every fixture that reads as a
 // database and over a database of many games. `rs/tests/stream_test.rs`
 // and `ts/test/stream.test.ts` are its twins.
+//
+// The database is the engine's own list, a *[]any of *Game, so a host
+// that empties the engine's lists behind its stream empties it too
+// (tabnas/chess#74): the last test empties it as tabnas-transduce's
+// ParserEventSource does when it prunes, and holds a long database's
+// parse to what it was and its tree flat.
 
 package tabnaschess
 
@@ -24,7 +30,7 @@ import (
 )
 
 type seenNodes struct {
-	database *Database
+	database *[]any
 	others   []string
 	joined   []string
 }
@@ -36,7 +42,7 @@ func watch(src string) (seen *seenNodes, games []string, ok bool) {
 	j := Make()
 	j.SubRuleDone(func(r *tabnas.Rule, _ *tabnas.Context, _ tabnas.RuleDone) {
 		switch node := r.Node.(type) {
-		case *Database:
+		case *[]any:
 			if nil == seen.database {
 				seen.database = node
 			} else if seen.database != node {
@@ -55,7 +61,7 @@ func watch(src string) (seen *seenNodes, games []string, ok bool) {
 	if nil != err {
 		return nil, nil, false
 	}
-	db, isDatabase := value.(*Database)
+	db, isDatabase := value.(*[]any)
 	if !isDatabase {
 		return nil, nil, false
 	}
@@ -119,11 +125,12 @@ func TestStreamEveryFixtureDatabase(t *testing.T) {
 	}
 }
 
-func TestStreamManyGames(t *testing.T) {
-	// Every shape a game's tree can take while it is built: tags, a FEN
-	// start, numbers, nags, both kinds of comment with commands, nested
-	// variations, a variation before the first move, every result, and a
-	// game the next one's tags end.
+// manyGames is a database of count games, cycling through every shape a
+// game's tree can take while it is built: tags, a FEN start, numbers,
+// nags, both kinds of comment with commands, nested variations, a
+// variation before the first move, every result, and a game the next
+// one's tags end.
+func manyGames(count int) string {
 	games := []string{
 		"[Event \"a\"]\n[Site \"b\"]\n\n1. e4 e5 2. Nf3 {main} Nc6 $1 (2... d6 3. d4 (3. Bc4 $2) exd4) 3. Bb5 1-0",
 		"[FEN \"8/8/8/8/8/8/8/8 b - - 0 12\"]\n\n12... e5 13. Nf3 {[%clk 0:01:00]} ; rest of line\n0-1",
@@ -132,15 +139,116 @@ func TestStreamManyGames(t *testing.T) {
 		"[Event \"star\"]\n\n1. a3 *",
 	}
 	var src strings.Builder
-	for round := 0; round < 200; round++ {
+	for round := 0; round < count; round++ {
 		src.WriteString(games[round%len(games)])
 		src.WriteString("\n\n")
 	}
-	if !assertStreams(t, "many", src.String()) {
+	return src.String()
+}
+
+func TestStreamManyGames(t *testing.T) {
+	src := manyGames(200)
+	if !assertStreams(t, "many", src) {
 		t.Fatalf("many: the database does not read")
 	}
-	seen, _, _ := watch(src.String())
+	seen, _, _ := watch(src)
 	if 200 != len(seen.joined) {
 		t.Fatalf("many: %d games joined, want 200", len(seen.joined))
+	}
+}
+
+// emptiedRun is a parse of src with the engine Make builds, its rule
+// passes recorded. When empty is set, the database is emptied behind the
+// passes as tabnas-transduce's ParserEventSource empties a list when it
+// prunes: at each close pass whose rule's node is a *[]any holding
+// anything, the list is cleared and truncated in place, and each game it
+// held is taken as it stood then. Otherwise the games are the parse's
+// value's, after it. most is the most games the database held at a close
+// pass.
+func emptiedRun(t *testing.T, src string, empty bool) (passes, games []string, most int, value any) {
+	t.Helper()
+	j := Make()
+	j.SubRuleDone(func(r *tabnas.Rule, _ *tabnas.Context, done tabnas.RuleDone) {
+		pass := fmt.Sprintf("%s %s", r.Name, done.State)
+		if nil != done.Alt {
+			pass += fmt.Sprintf(" %v p=%s r=%s b=%d", done.Alt.G, done.Alt.P, done.Alt.R, done.Alt.B)
+		}
+		passes = append(passes, pass)
+		list, ok := r.NodeCell().Node.(*[]any)
+		if tabnas.CLOSE != done.State || !ok || nil == list || 0 == len(*list) {
+			return
+		}
+		most = max(most, len(*list))
+		if !empty {
+			return
+		}
+		for _, game := range *list {
+			encoded, _ := json.Marshal(game)
+			games = append(games, string(encoded))
+		}
+		clear(*list)
+		*list = (*list)[:0]
+	})
+	value, err := j.Parse(src)
+	if nil != err {
+		t.Fatalf("the parse failed: %v", err)
+	}
+	if !empty {
+		db, err := DatabaseOf(value)
+		if nil != err {
+			t.Fatal(err)
+		}
+		for _, game := range db {
+			encoded, _ := json.Marshal(game)
+			games = append(games, string(encoded))
+		}
+	}
+	return passes, games, most, value
+}
+
+// TestAnEmptiedDatabaseParsesOnAndStaysFlat empties the database behind
+// the passes, as a host that prunes does, over 200 games and ten times as
+// many: the parse makes the same passes and the same games as one that
+// empties nothing, the database holds at most the game that just joined,
+// and the parse ends with it empty, holding no game even in the array
+// behind it. A typed database was out of the emptying's reach, and kept
+// every game (tabnas/chess#74).
+func TestAnEmptiedDatabaseParsesOnAndStaysFlat(t *testing.T) {
+	for _, count := range []int{200, 2000} {
+		src := manyGames(count)
+		wholePasses, wholeGames, wholeMost, _ := emptiedRun(t, src, false)
+		passes, games, most, value := emptiedRun(t, src, true)
+		if count != len(wholeGames) || count != wholeMost {
+			t.Fatalf("%d games: a parse that empties nothing has %d games, at most %d at a close pass",
+				count, len(wholeGames), wholeMost)
+		}
+		if len(passes) != len(wholePasses) {
+			t.Fatalf("%d games: %d passes emptied, %d not", count, len(passes), len(wholePasses))
+		}
+		for i := range wholePasses {
+			if passes[i] != wholePasses[i] {
+				t.Fatalf("%d games: pass %d is %q emptied, %q not", count, i, passes[i], wholePasses[i])
+			}
+		}
+		if !reflect.DeepEqual(games, wholeGames) {
+			t.Fatalf("%d games: the games emptied out of the database are not the parse's", count)
+		}
+		if 1 != most {
+			t.Fatalf("%d games: the emptied database held %d games at a close pass, not 1", count, most)
+		}
+		list, ok := value.(*[]any)
+		if !ok || nil == list {
+			t.Fatalf("%d games: the parse returned %T, not the database", count, value)
+		}
+		if 0 != len(*list) {
+			t.Fatalf("%d games: the emptied database ends holding %d games", count, len(*list))
+		}
+		for _, item := range (*list)[:cap(*list)] {
+			if nil != item {
+				t.Fatalf("%d games: the array behind the emptied database still holds a %T", count, item)
+			}
+		}
+		t.Logf("%d games: %d passes, the emptied database held at most %d game, and none at the end",
+			count, len(passes), most)
 	}
 }

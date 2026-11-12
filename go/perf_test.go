@@ -35,7 +35,10 @@ func TestParseReusesInstance(t *testing.T) {
 		if nil != err {
 			t.Fatal(err)
 		}
-		db := *(out.(*Database))
+		db, err := DatabaseOf(out)
+		if nil != err {
+			t.Fatal(err)
+		}
 		if 1 != len(db) || "1-0" != db[0].Result {
 			t.Fatalf("unexpected result %+v", db)
 		}
