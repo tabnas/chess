@@ -263,7 +263,7 @@ const grammarText = `
 }`
 // --- END EMBEDDED chess-grammar.jsonic ---
 
-export const VERSION = '0.1.19'
+export const VERSION = '0.2.0'
 
 // --- The parse model -----------------------------------------------------
 
