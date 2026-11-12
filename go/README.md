@@ -52,7 +52,9 @@ and reuse it:
 j := chess.Make()
 for _, src := range sources {
     out, err := j.Parse(src)
-    // out is *chess.Database
+    // out is the engine's own list, a *[]any whose elements are *chess.Game
+    db, err := chess.DatabaseOf(out)
+    // db is the chess.Database chess.Parse returns
 }
 ```
 
@@ -68,7 +70,7 @@ if nil != err {
 }
 defer f.Close()
 out, err := chess.Make().ParseReader(f)
-// out is *chess.Database
+// out is a *[]any of *chess.Game, and chess.DatabaseOf(out) the chess.Database
 ```
 
 The matchers the plugin installs read the text only through the lexer's
@@ -93,9 +95,16 @@ chess.Make(chess.Options{Strict: true})
 The **model and the accepted notation are identical**: that is what the
 shared fixtures pin. Three things differ because the languages do:
 
-1. **`Parse` returns `Database` (a slice), and the engine's node is
-   `*Database`.** A Go slice is a value, so the rule that appends each
-   game has to write through a pointer.
+1. **`Parse` returns `Database` (a slice of `*Game`), and the engine's
+   node is the engine's own list, a `*[]any` holding the same `*Game`
+   values.** A Go slice is a value, so the rule that appends each game
+   has to write through a pointer. The list is the engine's own, as the
+   TypeScript and Rust databases are plain arrays, so that a host that
+   empties the engine's lists behind its stream (tabnas-transduce's
+   pruning) empties it too: a typed slice is out of its reach, and a
+   pruned run kept every game
+   ([#74](https://github.com/tabnas/chess/issues/74)). `DatabaseOf`
+   makes the typed `Database` from it, as `Parse` does.
 
 2. **`Game` embeds `Line` anonymously** rather than extending it, so the
    two marshal to the same JSON object.

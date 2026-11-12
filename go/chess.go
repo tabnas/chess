@@ -360,7 +360,9 @@ type Game struct {
 	Result string `json:"result,omitempty"`
 }
 
-// Database is a sequence of games (PGN spec 18).
+// Database is a sequence of games (PGN spec 18): what Parse returns. The
+// engine Make builds parses a database into the engine's own list, a
+// *[]any of *Game, and DatabaseOf makes a Database from it.
 type Database []*Game
 
 // liner is what `movetext` and `element` write into: a game or a
@@ -386,8 +388,10 @@ type Options struct {
 	// value of Options still means "parse commands".
 	CommandsSet bool
 
-	// Start selects the entry rule, and so what Parse returns:
-	// "pgn" (default, Database), "game", "movetext" or "move".
+	// Start selects the entry rule, and so what a parse returns: "pgn"
+	// (the default, a database, as a *[]any of *Game), "game" (a *Game),
+	// "movetext" (a *Line) or "move" (a *Move). Parse and ParseGame
+	// always read a database.
 	Start string
 }
 
@@ -1114,7 +1118,10 @@ type count struct {
 // a finished game is ever stored in it, which is what lets a streaming
 // host send a database a game at a time (see the TypeScript plugin). A
 // game cannot leave sooner, since a move's annotations, comments and
-// variations follow the move (PGN spec 8.2.3.8, 5, 8.2.5).
+// variations follow the move (PGN spec 8.2.3.8, 5, 8.2.5). Nothing the
+// parse does reads the database back, so a host that empties it behind
+// its stream, as tabnas-transduce's ParserEventSource does at each close
+// pass when it prunes, leaves the parse as it was.
 //
 // A `game` or `movetext` that is the start rule has no database to join:
 // the line it builds is its node, which current falls back to when the
@@ -1243,11 +1250,17 @@ func decompose(re *regexp.Regexp, src string) *Move {
 
 func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 	return map[tabnas.FuncRef]any{
-		// The database is held behind a pointer: a Go slice is a value, so
-		// `gameitem` appending to its inherited node would otherwise
-		// append to a copy and `pgn` would end with nothing.
+		// The database is the engine's own list, a *[]any of *Game, as it
+		// is a plain array in the Rust and TypeScript ports, so that a host
+		// that empties the engine's lists behind its stream
+		// (tabnas-transduce's ParserEventSource, when it prunes) empties it
+		// too: a typed slice is out of its reach (tabnas/chess#74). Parse
+		// makes the typed Database from it (DatabaseOf). It is held behind
+		// a pointer because a Go slice is a value: `gameitem` appending to
+		// its inherited node would otherwise append to a copy, and `pgn`
+		// would end with nothing.
 		"@pgn-bo": tabnas.StateAction(func(r *tabnas.Rule, _ *tabnas.Context) {
-			r.Node = &Database{}
+			r.Node = &[]any{}
 		}),
 
 		// The game is complete: it leaves the stack and joins the database.
@@ -1256,7 +1269,7 @@ func refs(san *regexp.Regexp, commands bool) map[tabnas.FuncRef]any {
 			if !ok || nil == g {
 				return
 			}
-			if db, ok := r.Node.(*Database); ok {
+			if db, ok := r.Node.(*[]any); ok && nil != db {
 				*db = append(*db, g)
 			}
 		}),
@@ -1599,7 +1612,9 @@ func Chess(j *tabnas.Tabnas, options map[string]any) error {
 				"pgnRemark":  {Order: 1300000, Make: makeRemarkMatcher(tRMK, o.commands())},
 				"pgnEscape":  {Order: 1500000, Make: makeEscapeMatcher()},
 			},
-			EmptyResult: &Database{},
+			// An empty source is an empty database, in the shape a
+			// database parses into.
+			EmptyResult: &[]any{},
 		},
 
 		TokenSet: map[string][]string{
@@ -1739,6 +1754,11 @@ func colourActive() bool {
 // Make builds a Tabnas engine with the chess grammar installed. Reuse the
 // result: building the grammar dominates a parse.
 //
+// Under the default start rule, a parse returns the database as the
+// engine's own list, a *[]any whose elements are the games, each a *Game,
+// in document order; DatabaseOf makes the typed Database from it, as Parse
+// does.
+//
 // The engine also reads a source from a reader a window at a time
 // (Tabnas.ParseReader, admin ADR-30). The plugin's matchers read the text
 // only through the lexer's window, so Make declares lex.window: a database
@@ -1790,11 +1810,28 @@ func Parse(src string, opts ...Options) (Database, error) {
 	if nil != err {
 		return nil, err
 	}
-	db, ok := out.(*Database)
-	if !ok {
-		return nil, fmt.Errorf("chess: unexpected parse result %T", out)
+	return DatabaseOf(out)
+}
+
+// DatabaseOf is the typed Database a parse of a database returned: the
+// games of the engine's list, a *[]any of *Game, in order, each the same
+// *Game. A database of no games is an empty Database, not nil. Parse
+// calls it; a caller who parses with the engine Make builds, from a reader
+// say, calls it on the value. Any other value is refused, naming its type.
+func DatabaseOf(value any) (Database, error) {
+	games, ok := value.(*[]any)
+	if !ok || nil == games {
+		return nil, fmt.Errorf("chess: unexpected parse result %T", value)
 	}
-	return *db, nil
+	db := make(Database, 0, len(*games))
+	for _, item := range *games {
+		g, ok := item.(*Game)
+		if !ok || nil == g {
+			return nil, fmt.Errorf("chess: unexpected game %T in the database", item)
+		}
+		db = append(db, g)
+	}
+	return db, nil
 }
 
 // ParseGame reads the first game of src, or nil if there is none. As with

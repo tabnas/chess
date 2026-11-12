@@ -796,9 +796,22 @@ The model and the accepted notation are identical — that is what the
 shared fixtures pin. Four things differ because the languages do, and each
 is a trap if you forget it:
 
-- **The database node is a `*Database`.** A Go slice is a value, so
-  `@gameitem-bc` appending to its inherited node would append to a copy.
-  `@pgn-bo` allocates a pointer for exactly this reason.
+- **The database node is the engine's own list, a `*[]any` of `*Game`.**
+  A Go slice is a value, so `@gameitem-bc` appending to its inherited
+  node would append to a copy: `@pgn-bo` allocates a pointer for exactly
+  this reason. It is the engine's own list rather than a typed slice
+  because tabnas-transduce's `ParserEventSource`, when it prunes, empties
+  the engine's own containers behind its stream (`[]any`, `*[]any`,
+  `tabnas.ListRef`, `map[string]any`, `*tabnas.OrderedMap` and
+  `tabnas.MapRef`) and nothing else: a typed `*Database` kept every game
+  of a pruned run, where the Rust and TypeScript arrays are emptied
+  (tabnas/chess#74). `Parse` makes the typed `Database` from the list
+  with `DatabaseOf`, which a caller of `Make` uses too, and
+  `Lex.EmptyResult` is an empty list of the same shape.
+  `TestAnEmptiedDatabaseParsesOnAndStaysFlat` (`go/stream_test.go`)
+  empties the database at each close pass, as a pruning host does, and
+  holds a long database's parse to the passes and games of one that
+  empties nothing, and its tree to the one game that just joined.
 - **`Game` embeds `Line` anonymously**, which is what makes the two
   marshal to the same JSON object as the TypeScript `extends`.
 - **Boundary guards are code, not lookahead.** RE2 has no `(?!…)`, so the

@@ -64,12 +64,68 @@ func TestPluginSurface(t *testing.T) {
 		if nil != err {
 			t.Fatal(err)
 		}
-		db, ok := out.(*Database)
-		if !ok || 1 != len(*db) {
+		// The database is the engine's own list of games (tabnas/chess#74).
+		games, ok := out.(*[]any)
+		if !ok || 1 != len(*games) {
 			t.Fatalf("unexpected result %#v", out)
 		}
-		if "e4" != (*db)[0].Moves[0].San {
-			t.Fatalf("got %q", (*db)[0].Moves[0].San)
+		g, ok := (*games)[0].(*Game)
+		if !ok {
+			t.Fatalf("the database holds a %T, not a *Game", (*games)[0])
+		}
+		if "e4" != g.Moves[0].San {
+			t.Fatalf("got %q", g.Moves[0].San)
+		}
+	})
+
+	// The raw value Make's engine returns is a *[]any of *Game, and
+	// DatabaseOf is the typed Database Parse returns, the same games.
+	t.Run("DatabaseOf is what Parse returns", func(t *testing.T) {
+		src := "[Event \"a\"]\n\n1. e4 e5 1-0\n\n[Event \"b\"]\n\n1. d4 *"
+		out, err := Make().Parse(src)
+		if nil != err {
+			t.Fatal(err)
+		}
+		db, err := DatabaseOf(out)
+		if nil != err {
+			t.Fatal(err)
+		}
+		games := *out.(*[]any)
+		if 2 != len(db) || db[0] != games[0] || db[1] != games[1] {
+			t.Fatalf("DatabaseOf(%v) = %v", games, db)
+		}
+		parsed, err := Parse(src)
+		if nil != err {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(parsed, db) {
+			t.Fatalf("Parse gave %v, DatabaseOf %v", parsed, db)
+		}
+		raw, _ := json.Marshal(out)
+		typed, _ := json.Marshal(db)
+		if string(raw) != string(typed) {
+			t.Fatalf("the raw value encodes as %s, the Database as %s", raw, typed)
+		}
+
+		empty, err := Make().Parse("")
+		if nil != err {
+			t.Fatal(err)
+		}
+		if db, err := DatabaseOf(empty); nil != err || nil == db || 0 != len(db) {
+			t.Fatalf("DatabaseOf(an empty parse) = %#v, %v", db, err)
+		}
+	})
+
+	t.Run("DatabaseOf refuses what is not a database", func(t *testing.T) {
+		move, err := Make(Options{Start: "move"}).Parse("e4")
+		if nil != err {
+			t.Fatal(err)
+		}
+		var none *[]any
+		for _, value := range []any{nil, move, none, &[]any{"e4"}, &[]any{(*Game)(nil)}, Database{}} {
+			if db, err := DatabaseOf(value); nil == err {
+				t.Errorf("DatabaseOf(%#v) = %v, want an error", value, db)
+			}
 		}
 	})
 

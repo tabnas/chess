@@ -349,7 +349,8 @@ What is necessarily per-runtime is the lexer, because a lexer is code:
   after the match rather than a `(?!…)` inside the pattern. Same rule,
   checked one step later.
 - A Go slice is a value, so the rule that appends each game writes through
-  a `*Database`, where JavaScript pushes onto an array.
+  a pointer to the engine's own list, a `*[]any`, where JavaScript pushes
+  onto an array. Go's `Parse` makes the typed `Database` from that list.
 - `Game` embeds `Line` anonymously in Go and flattens it in Rust rather
   than extending it, which is what makes all three marshal to the same
   JSON object.
