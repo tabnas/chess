@@ -645,7 +645,7 @@ def pgn-render [input]
     scan-emit [] pgn-step pgn-finish (events input)
 ` }),
   transduce: Object.freeze({ entry: "pgn-transduce", source: `; PGN's transducer part: a database's JSON events from the chess grammar's
-; rule passes, for a host that reads parser events (alchemy-cli's
+; rule passes, for a host that reads parser events (dmog's
 ; \`translate\` and \`run --grammar pgn\`). It is hand-written, since the
 ; grammar builds each game on a stack in the parse's context and stores it
 ; in the database only once the game is complete, so no pass carries a
